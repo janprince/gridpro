@@ -1,0 +1,313 @@
+import 'package:grid_professionals/data/country/country_config.dart';
+
+/// Ghana market configuration: services, regions, payout rails.
+const ghanaConfig = CountryConfig(
+  code: 'GH',
+  name: 'Ghana',
+  dialCode: '+233',
+  currencySymbol: 'GH₵',
+  currencyCode: 'GHS',
+  localPhoneDigits: 9,
+  idDocumentName: 'Ghana Card',
+  services: [
+    ServiceDefinition(
+      id: 'plumbing',
+      name: 'Plumbing',
+      imageAsset: 'assets/images/services/plumbing.jpg',
+      pricingModel: PricingModel.calloutQuote,
+      subServices: [
+        'Leak repairs',
+        'Pipe installation',
+        'Toilet & bathroom fittings',
+        'Water heater installation',
+        'Drain unblocking',
+        'Pump connections',
+      ],
+      experienceHint:
+          'Mention the plumbing systems you know best, such as PPR piping, '
+          'polytank connections or bathroom fittings.',
+    ),
+    ServiceDefinition(
+      id: 'electrical',
+      name: 'Electrical',
+      imageAsset: 'assets/images/services/electrical.jpg',
+      pricingModel: PricingModel.calloutQuote,
+      subServices: [
+        'Wiring & rewiring',
+        'Fault finding & repairs',
+        'Distribution board work',
+        'Lighting installation',
+        'Sockets & switches',
+        'Appliance connections',
+      ],
+      experienceHint:
+          'Mention the electrical work you handle most, such as domestic '
+          'wiring, DB upgrades or fault diagnosis.',
+    ),
+    ServiceDefinition(
+      id: 'ac_repair',
+      name: 'AC repair & servicing',
+      imageAsset: 'assets/images/services/ac_repair.jpg',
+      pricingModel: PricingModel.calloutQuote,
+      subServices: [
+        'Split AC installation',
+        'Servicing & cleaning',
+        'Gas refill',
+        'Fault repairs',
+        'Central AC maintenance',
+      ],
+      experienceHint:
+          'Mention the AC brands and unit types you service most often.',
+    ),
+    ServiceDefinition(
+      id: 'cleaning',
+      name: 'Cleaning',
+      imageAsset: 'assets/images/services/cleaning.jpg',
+      pricingModel: PricingModel.hourly,
+      subServices: [
+        'Home cleaning',
+        'Deep cleaning',
+        'Move-in / move-out cleaning',
+        'Office cleaning',
+        'Sofa & carpet cleaning',
+        'After-construction cleaning',
+      ],
+      experienceHint:
+          'Mention the spaces you clean most, such as homes, offices or '
+          'after-construction sites.',
+    ),
+    ServiceDefinition(
+      id: 'laundry',
+      name: 'Laundry',
+      pricingModel: PricingModel.perItem,
+      delivery: ServiceDelivery.both,
+      subServices: [
+        'Wash & fold',
+        'Wash & iron',
+        'Dry cleaning',
+        'Duvets & bulky items',
+        'Pickup & delivery',
+      ],
+      experienceHint:
+          'Mention your equipment and whether you offer pickup and delivery.',
+    ),
+    ServiceDefinition(
+      id: 'gardening',
+      name: 'Gardening',
+      imageAsset: 'assets/images/services/gardening.jpg',
+      pricingModel: PricingModel.hourly,
+      subServices: [
+        'Lawn mowing & trimming',
+        'Hedge & tree trimming',
+        'Landscaping',
+        'Weeding & clearing',
+        'Garden maintenance plans',
+      ],
+      experienceHint:
+          'Mention the garden work you do most and any equipment you own.',
+    ),
+    ServiceDefinition(
+      id: 'carpentry',
+      name: 'Carpentry',
+      imageAsset: 'assets/images/services/carpentry.jpg',
+      pricingModel: PricingModel.calloutQuote,
+      subServices: [
+        'Furniture making',
+        'Furniture repairs',
+        'Doors & frames',
+        'Wardrobes & cabinets',
+        'Roofing carpentry',
+      ],
+      experienceHint:
+          'Mention the joinery or furniture work you specialise in.',
+    ),
+    ServiceDefinition(
+      id: 'painting',
+      name: 'Painting',
+      pricingModel: PricingModel.calloutQuote,
+      subServices: [
+        'Interior painting',
+        'Exterior painting',
+        'Screeding & surface prep',
+        'Decorative finishes',
+      ],
+      experienceHint:
+          'Mention the painting and finishing work you handle most.',
+    ),
+    ServiceDefinition(
+      id: 'appliance_repair',
+      name: 'Appliance repair',
+      pricingModel: PricingModel.calloutQuote,
+      subServices: [
+        'Fridges & freezers',
+        'Washing machines',
+        'Microwaves & ovens',
+        'TVs & electronics',
+        'Blenders & small appliances',
+      ],
+      experienceHint: 'Mention the appliances and brands you repair most.',
+    ),
+    ServiceDefinition(
+      id: 'solar_power',
+      name: 'Solar, generator & inverter',
+      pricingModel: PricingModel.calloutQuote,
+      subServices: [
+        'Solar panel installation',
+        'Inverter & battery systems',
+        'Generator servicing',
+        'Changeover installation',
+        'System maintenance',
+      ],
+      experienceHint:
+          'Mention the system sizes and brands you install or service.',
+    ),
+    ServiceDefinition(
+      id: 'water_systems',
+      name: 'Water pump & borehole',
+      pricingModel: PricingModel.calloutQuote,
+      subServices: [
+        'Pump installation & repairs',
+        'Borehole maintenance',
+        'Polytank installation',
+        'Water treatment systems',
+      ],
+      experienceHint: 'Mention the pump and water system work you know best.',
+    ),
+    ServiceDefinition(
+      id: 'security_systems',
+      name: 'CCTV & security',
+      pricingModel: PricingModel.calloutQuote,
+      subServices: [
+        'CCTV installation',
+        'Electric fencing',
+        'Access control',
+        'Alarm systems',
+        'Intercom systems',
+      ],
+      experienceHint:
+          'Mention the security systems and brands you install most.',
+    ),
+    ServiceDefinition(
+      id: 'masonry',
+      name: 'Masonry & tiling',
+      pricingModel: PricingModel.calloutQuote,
+      subServices: [
+        'Tiling',
+        'Block work',
+        'Plastering',
+        'Concrete works',
+        'Repairs & finishing',
+      ],
+      experienceHint: 'Mention the masonry or tiling work you specialise in.',
+    ),
+    ServiceDefinition(
+      id: 'welding',
+      name: 'Welding & metal work',
+      pricingModel: PricingModel.calloutQuote,
+      subServices: [
+        'Gates & burglar proofing',
+        'Metal doors & windows',
+        'Railings & balustrades',
+        'General fabrication',
+      ],
+      experienceHint: 'Mention the fabrication work you handle most.',
+    ),
+    ServiceDefinition(
+      id: 'handyman',
+      name: 'General handyman',
+      pricingModel: PricingModel.calloutQuote,
+      subServices: [
+        'Small repairs',
+        'Fittings & mounting',
+        'Furniture assembly',
+        'Curtains & blinds',
+        'General maintenance',
+      ],
+      experienceHint: 'Mention the everyday jobs you handle confidently.',
+    ),
+  ],
+  regions: [
+    RegionDefinition(
+      name: 'Greater Accra',
+      towns: [
+        'East Legon',
+        'Spintex',
+        'Adenta',
+        'Madina',
+        'Tema',
+        'Osu',
+        'Labone',
+        'Cantonments',
+        'Airport Residential',
+        'Dansoman',
+        'Achimota',
+        'Lapaz',
+        'Dome',
+        'Ashaley Botwe',
+        'Teshie',
+        'Nungua',
+        'Kasoa',
+        'Weija',
+        'Oyarifa',
+        'Pokuase',
+      ],
+    ),
+    RegionDefinition(
+      name: 'Ashanti',
+      towns: [
+        'Ahodwo',
+        'Asokwa',
+        'Bantama',
+        'Suame',
+        'Tafo',
+        'Ejisu',
+        'Santasi',
+        'Kwadaso',
+        'Atonsu',
+        'Obuasi',
+      ],
+    ),
+    RegionDefinition(
+      name: 'Western',
+      towns: [
+        'Takoradi',
+        'Sekondi',
+        'Anaji',
+        'Airport Ridge',
+        'Effia',
+        'Tarkwa',
+      ],
+    ),
+    RegionDefinition(
+      name: 'Central',
+      towns: ['Cape Coast', 'Elmina', 'Mankessim', 'Winneba', 'Swedru'],
+    ),
+    RegionDefinition(
+      name: 'Eastern',
+      towns: ['Koforidua', 'Nsawam', 'Suhum', 'Akosombo', 'Nkawkaw'],
+    ),
+    RegionDefinition(
+      name: 'Northern',
+      towns: ['Tamale', 'Sagnarigu', 'Savelugu', 'Yendi'],
+    ),
+  ],
+  mobileMoneyProviders: [
+    MobileMoneyProvider(id: 'mtn', name: 'MTN Mobile Money'),
+    MobileMoneyProvider(id: 'telecel', name: 'Telecel Cash'),
+    MobileMoneyProvider(id: 'at', name: 'AT Money'),
+  ],
+  banks: [
+    'GCB Bank',
+    'Ecobank Ghana',
+    'Absa Bank Ghana',
+    'Stanbic Bank',
+    'Fidelity Bank',
+    'CalBank',
+    'Zenith Bank',
+    'Standard Chartered',
+    'Agricultural Development Bank',
+    'UBA Ghana',
+    'Consolidated Bank Ghana',
+    'Republic Bank',
+  ],
+);
