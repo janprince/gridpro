@@ -1,99 +1,177 @@
-# GRID Professionals
+# GRID Pro
 
-GRID Professionals is the provider-facing operating system for the managed GRID service network. This Flutter MVP lets a skilled professional apply, complete mocked verification, become job-ready, manage a full job lifecycle, prepare quotes, submit evidence, track earnings and payouts, build a professional profile, and contact support.
+The provider-facing app in the GRID ecosystem. Version 1 serves four services — **home
+cleaning**, **laundry**, **AC servicing** and **pest control** — for independent professionals
+and small businesses in Ghana. GRID sets the price of every job; a provider picks the services
+they do, sees what each job earns them, and GRID assigns them work nearby.
 
-> All people, jobs, verification results, badges, payments, payout methods, receipts, uploads, support tickets, and transaction IDs in this repository are sample data. No real verification, customer approval, payment, or payout occurs.
+The app's most important journey is **onboarding**: taking a new professional from a phone number
+to a verified, bookable profile. Everything else in the product depends on getting that right.
+
+> Payments, payouts and verification decisions are handled by GRID operations. This app never
+> moves money itself.
 
 ## Toolchain
 
-- Flutter 3.44.4 stable
-- Dart 3.12.2
-- Material 3
-- `flutter_riverpod` for application and workflow state
-- `go_router` for auth, shell, and operational routes
-- `intl` for Ghana Cedi, date, and time formatting
-- `shared_preferences` for mock auth, onboarding, and availability persistence
+- Flutter 3.44 / Dart 3.12
+- Material 3 with a custom GRID theme (light only — there is no dark mode)
+- `flutter_riverpod` for app and onboarding state
+- `go_router` for routing
+- `dio` + `flutter_secure_storage` for the API client and session
+- `image_picker` for portfolio and identity capture
+- `shared_preferences` for the onboarding draft and local flags
+- `intl` for Ghana cedi, date and time formatting
 
-## Run
+## Running
 
 ```sh
 flutter pub get
 flutter run
 ```
 
-Useful verification commands:
+The app talks to the [GRID API](../Grid.API). Point it at a server with `--dart-define`:
+
+```sh
+# Android emulator reaching an API on the host machine (Android default)
+flutter run --dart-define=GRID_API_BASE_URL=http://10.0.2.2:8080/api/v1
+
+# iOS simulator / desktop / web use http://127.0.0.1:8080/api/v1 by default
+
+# A physical device on the same network
+flutter run --dart-define=GRID_API_BASE_URL=http://192.168.1.20:8080/api/v1
+
+# No backend at all — bundled sample data only
+flutter run --dart-define=GRID_USE_API=false
+```
+
+With `Otp:DevelopmentMode` on, the OTP code is always **123456**, and `0240000002` signs in as a
+seeded, approved provider (Efua Asante) who is online in East Legon.
+
+Verification commands:
 
 ```sh
 dart format lib test
 flutter analyze
 flutter test
-flutter build web
 ```
 
-The welcome screen includes an **Explore the mocked professional app** control for direct access to operational flows. To exercise onboarding, use **Apply to join GRID**. The OTP screen accepts any six digits in this demo.
+## Onboarding
 
-## Stitch Reference
+Onboarding is a **guided wizard with a hub**. A first-time provider walks the ten steps in order;
+anyone returning lands on an application overview showing each section's status and can jump
+straight to whatever is unfinished.
 
-The implementation was based on Stitch project `2931437422838032211` and its GRID Professionals screens, including:
+```
+Welcome → phone → OTP
+  About you            provider type · your details
+  Your work            services · experience · where you work · when you work
+  Getting paid         what you earn (read-only) · payout method
+  Trust & verification portfolio & qualifications · identity
+Review → submit → application status → dashboard
+```
 
-- Splash & Onboarding, Welcome & Login, Login & Authentication
-- Apply: Service Categories
-- Jobs Dashboard and New Job Offer
-- Active Job Detail and Quote Builder
-- Earnings Dashboard and Payment Receipt Confirmation
-- Professional Profile
-- App Empty States Showcase
+**The draft is offline-first.** Every change is written to the device immediately, so entered data
+survives route changes, app restarts and no connectivity. Completing a step also pushes that
+section to GRID in the background; if the push fails the section is queued and retried on the next
+step, on resume, and at submission. Providers work in the field on patchy networks — onboarding
+must never block on a request.
 
-The adopted direction is Stitch's forest-green **Premium Utility** system: warm off-white surfaces, charcoal text, restrained teal/mint accents, 20 px mobile margins, 8 px spacing rhythm, rounded cards, low-contrast borders, pill statuses, compact summary metrics, left-accented action cards, and fixed bottom actions. The app reuses that component and layout direction without copying consumer utility-payment screens.
+**Completeness is server-authoritative.** The review screen shows the app's own validation *and*
+`GET /provider-applications/me/readiness`, so what the provider sees matches what submission will
+actually accept.
 
-Improvements beyond Stitch include consistent 52–54 px actions, lifecycle-specific primary actions, full-address privacy before acceptance, a hard quote-approval gate before work, clearer evidence messaging, accessible status colors, explicit mocked-data labels, consistent support access, validation, and a unified five-tab provider information architecture. Visual assets are code-native placeholders so the MVP has no remote image dependency.
+Application status covers the whole lifecycle: under review, more information required,
+verification unsuccessful, approved and rejected. `verificationFailed` is derived from a rejected
+identity document rather than being a demo-only screen.
 
-## Implemented Flows
-
-- Splash, welcome, phone login, OTP, eight-step professional application, verification tracker, and job-ready checklist
-- Jobs-first shell with Jobs, Schedule, Earnings, Profile, and Support tabs
-- Availability states: available, busy, and offline, plus days, hours, travel radius, emergency, same-day, and vacation controls
-- Offer review with general area only, accept confirmation, decline reasons, then full customer details after acceptance
-- Journey, arrival, inspection notes/photos, quote draft, quote preview, submission, customer-approval simulation, and approval gate
-- Approved work, progress notes/photos, completion evidence, customer-confirmation simulation, payment processing, payout pending, paid, and sample receipt
-- Earnings metrics, commission transparency, trend, job-level earnings, payout method placeholder, payout history, and job history
-- Professional profile, sample badges, service areas, portfolio, editing, ratings/performance, reviews, and training modules
-- Support categories, safety escalation, issue/dispute form, evidence placeholder, and locally recorded mock ticket
-- Reusable cards, job cards, status chips, metrics, timeline steps, availability control, upload tiles, empty states, support actions, confirmation sheets, and fixed action bars
-
-## Structure
+## Architecture
 
 ```text
 lib/
-  app/                 App root
+  app/                   App root
   core/
-    models/            Typed domain models and enums
-    routing/           go_router route graph
-    theme/             Stitch-derived colors, spacing, radius, theme
-    utils/             Currency/date formatting and validation
-    widgets/           Reusable UI components
+    models/              Domain models, onboarding draft, enums
+    routing/             go_router route graph
+    theme/               Design tokens (colour, type, spacing, status) and ThemeData
+    utils/               Currency/date formatting and validators
+    widgets/             Component library, grouped by concern, re-exported by app_widgets.dart
   data/
-    mock_data.dart     Ghana-focused fixtures
-    repositories/      Replaceable repository contract and mock adapter
+    api/                 API client, session, repositories, onboarding sync
+    country/             Country-agnostic config + Ghana market data and presentation overlay
+    repositories/        Repository contract with a mock adapter
   features/
-    auth/ onboarding/  Trust and application flows
-    jobs/ quote/       Operational lifecycle and commercial workflow
-    schedule/ earnings/
-    profile/ support/
-    main/              Five-tab shell
-  state/               Riverpod app/workflow controller and persistence
+    auth/ onboarding/    Signup, verification and the application flow
+    home/                Today: earnings, the most urgent request, the next job
+    jobs/                Jobs list, request (accept/decline) and job screens
+    earnings/ account/ support/
+    main/                Four-tab shell: Home · Jobs · Earnings · Account
+  state/                 Riverpod controllers and providers
 ```
 
-## API Integration Points
+### Design system
 
-`GridRepository` is the replacement boundary for profile, jobs, earnings, payouts, reviews, and training. A production adapter can replace `MockGridRepository` through `gridRepositoryProvider`. Job mutations, quote submission, uploads, verification, payout methods, customer contact, directions, notifications, support chat, WhatsApp, receipt sharing, and support tickets currently remain local UI simulations and should be backed by authenticated services.
+Deep navy actions, white working surfaces and one tint per service (mint for cleaning, sky for
+laundry), adapted from Hubtel's merchant app. Rationale, tokens and rules are in
+[design/REDESIGN.md](design/REDESIGN.md).
 
-Production work should also add secure token storage, backend-authoritative workflow transitions, signed upload URLs, offline retry queues, push notifications, map/navigation SDKs, observability, crash reporting, analytics consent, localization, real accessibility audits, and integration tests against staging APIs.
+Tokens live in `core/theme/app_theme.dart`: colours, service palettes, the `AppText` type scale
+(Plus Jakarta Sans with Inter as fallback, tabular figures for money), spacing, radii, control
+sizes, and a `StatusKind` enum that pairs every status with an icon or label. Components are grouped
+under `core/widgets/` (`layout`, `cards`, `forms`, `feedback`, `onboarding_widgets`, `patterns`,
+`branding`) and re-exported through `app_widgets.dart`. Button labels are sentence case, and
+widget tests find buttons by that exact copy.
 
-## Known Limitations
+### Catalogue
 
-- No live backend, identity verification, customer app handshake, payment processor, payout rail, maps, notifications, or media picker is connected.
-- Application form fields beyond the core mocked selections are not persisted as a complete draft.
-- Quote editing uses one representative material line; the data model supports multiple materials but dynamic persistence is future work.
-- The demo can advance customer approval and payment states locally so the entire lifecycle is reviewable.
-- Badges, ratings, receipts, review times, commissions, and earnings are illustrative only.
+Which services and coverage areas exist is **decided by the API**, not hardcoded here — the app
+reads `GET /service-categories` (top-level rows are services, children are skills; only launched
+ones are offered), `GET /service-catalogue` (GRID's package prices and fee, for the earnings
+table) and `GET /service-areas`, grouping areas by region for the picker.
+
+`data/country/ghana_presentation.dart` is a presentation overlay keyed by category slug supplying
+only what the API has no opinion about: display name, summary and the experience prompt. It is also the allow-list — categories without an entry are not offered in the app.
+`data/country/ghana_config.dart` holds market rules — dial code, currency, Mobile Money providers,
+banks — and stands in for the catalogue while offline. Launching another market means swapping the
+config, not editing widgets.
+
+### API client
+
+`data/api/api_client.dart` attaches the bearer token and a correlation id, unwraps the
+`{success, data, error, traceId, timestamp}` envelope, and refreshes an expired access token
+exactly once even when several requests fail together — refresh tokens are single-use and rotate,
+so parallel refreshes would revoke each other. Failures become `ApiException` carrying the API's
+stable `error.code`; callers branch on the code, never the message.
+
+Tokens are held in platform secure storage, never in `shared_preferences`.
+
+## Testing
+
+`flutter test` covers onboarding navigation and validation gating, back-preserves-data,
+draft survival across a restart, the OTP error and resend countdown, hub and review state,
+double-submit protection, every application-status screen, the first-time dashboard, layout at
+320×640 with 1.3× text scale, and the API client's envelope, error, refresh and offline handling.
+
+Widget tests override `apiEnabledProvider` to false, so they need neither a server nor platform
+secure storage.
+
+## After approval
+
+Home, Jobs, Earnings, Account and Support read and write through one contract,
+`GridRepository`. `ApiGridRepository` talks to GRID; `MockGridRepository` backs "Explore the demo"
+and the widget tests. GRID decides which requests a provider sees, what a job pays and which step
+comes next (`nextCommand`); the app shows it and sends the step.
+
+There is no push channel, so the tab shell re-reads requests every 30 seconds and whenever the app
+comes back to the foreground. `test/live_api_test.dart` drives a real booking through the
+repository against a running development API.
+
+## Known limitations
+
+- The provider's base location is the areas chosen in onboarding; the app does not yet send the
+  phone's GPS position (the API accepts it).
+- Adding a second service, changing areas or changing the payout account goes through support.
+- Ratings show "New" until GRID has reviews.
+
+Startup restores saved state with a two-second storage deadline and a two-second server-status
+deadline. Catalogue loading runs separately and falls back to bundled Ghana data when unavailable;
+it never blocks the splash. Late status responses are discarded after the deadline.

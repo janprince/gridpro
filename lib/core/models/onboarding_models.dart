@@ -85,7 +85,7 @@ extension OnboardingStepInfo on OnboardingStep {
     OnboardingStep.experience => 'Your experience',
     OnboardingStep.serviceArea => 'Where you work',
     OnboardingStep.availability => 'When you work',
-    OnboardingStep.pricing => 'Your pricing',
+    OnboardingStep.pricing => 'What you earn',
     OnboardingStep.payout => 'How you get paid',
     OnboardingStep.portfolio => 'Your work & qualifications',
     OnboardingStep.identity => 'Identity verification',
@@ -148,6 +148,7 @@ class OnboardingDraft {
     this.delivery,
     this.premisesAddress = '',
     this.primaryServiceId,
+    this.extraServiceIds = const [],
     this.subServices = const [],
     this.yearsExperience,
     this.experienceSummary = '',
@@ -176,6 +177,7 @@ class OnboardingDraft {
     this.idFront,
     this.idBack,
     this.selfie,
+    this.licence,
     this.agreedToStandards = false,
     this.currentStep = 0,
   });
@@ -187,7 +189,12 @@ class OnboardingDraft {
   final String businessName;
   final ServiceDelivery? delivery;
   final String premisesAddress;
+
+  /// The first service chosen; it leads the provider's profile.
   final String? primaryServiceId;
+
+  /// Any other services they also offer.
+  final List<String> extraServiceIds;
   final List<String> subServices;
   final int? yearsExperience;
   final String experienceSummary;
@@ -216,6 +223,9 @@ class OnboardingDraft {
   final UploadItem? idFront;
   final UploadItem? idBack;
   final UploadItem? selfie;
+
+  /// The EPA pest control licence, needed when pest control is offered.
+  final UploadItem? licence;
   final bool agreedToStandards;
   final int currentStep;
 
@@ -230,6 +240,7 @@ class OnboardingDraft {
     Object? delivery = _unset,
     String? premisesAddress,
     Object? primaryServiceId = _unset,
+    List<String>? extraServiceIds,
     List<String>? subServices,
     Object? yearsExperience = _unset,
     String? experienceSummary,
@@ -258,6 +269,7 @@ class OnboardingDraft {
     Object? idFront = _unset,
     Object? idBack = _unset,
     Object? selfie = _unset,
+    Object? licence = _unset,
     bool? agreedToStandards,
     int? currentStep,
   }) => OnboardingDraft(
@@ -273,6 +285,7 @@ class OnboardingDraft {
     primaryServiceId: primaryServiceId == _unset
         ? this.primaryServiceId
         : primaryServiceId as String?,
+    extraServiceIds: extraServiceIds ?? this.extraServiceIds,
     subServices: subServices ?? this.subServices,
     yearsExperience: yearsExperience == _unset
         ? this.yearsExperience
@@ -309,11 +322,18 @@ class OnboardingDraft {
     idFront: idFront == _unset ? this.idFront : idFront as UploadItem?,
     idBack: idBack == _unset ? this.idBack : idBack as UploadItem?,
     selfie: selfie == _unset ? this.selfie : selfie as UploadItem?,
+    licence: licence == _unset ? this.licence : licence as UploadItem?,
     agreedToStandards: agreedToStandards ?? this.agreedToStandards,
     currentStep: currentStep ?? this.currentStep,
   );
 
   bool get isBusiness => providerType == ProviderType.business;
+
+  /// Every service chosen, the main one first.
+  List<String> get serviceIds => [?primaryServiceId, ...extraServiceIds];
+
+  /// Pest control by law needs an EPA licence.
+  bool get needsLicence => serviceIds.contains('pest-control');
 
   bool get servesAtPremises =>
       delivery == ServiceDelivery.fixedPremises ||
@@ -325,7 +345,6 @@ class OnboardingDraft {
   /// Completion state of one wizard step, used by the hub, the review screen
   /// and step validation.
   SectionStatus statusOf(OnboardingStep step, CountryConfig config) {
-    final service = config.serviceById(primaryServiceId);
     return switch (step) {
       OnboardingStep.providerType =>
         providerType == null
@@ -360,21 +379,13 @@ class OnboardingDraft {
             : currentStep >= OnboardingStep.availability.index
             ? SectionStatus.complete
             : SectionStatus.notStarted,
-      OnboardingStep.pricing => switch (service?.pricingModel) {
-        null => SectionStatus.notStarted,
-        PricingModel.calloutQuote =>
-          calloutFee == null
-              ? SectionStatus.notStarted
-              : SectionStatus.complete,
-        PricingModel.hourly =>
-          hourlyRate == null
-              ? SectionStatus.notStarted
-              : SectionStatus.complete,
-        PricingModel.perItem =>
-          minimumCharge == null
-              ? SectionStatus.notStarted
-              : SectionStatus.complete,
-      },
+      // GRID sets prices; this step only shows what each job pays.
+      OnboardingStep.pricing =>
+        primaryServiceId == null
+            ? SectionStatus.notStarted
+            : currentStep >= OnboardingStep.pricing.index
+            ? SectionStatus.complete
+            : SectionStatus.notStarted,
       OnboardingStep.payout => _payoutStatus,
       OnboardingStep.portfolio =>
         portfolio.isEmpty && qualifications.isEmpty
@@ -422,13 +433,10 @@ class OnboardingDraft {
   }
 
   SectionStatus get _identityStatus {
-    final done = [
-      idFront,
-      idBack,
-      selfie,
-    ].where((item) => item?.state == UploadState.done).length;
-    if (done == 3) return SectionStatus.complete;
-    if (done > 0 || idFront != null || idBack != null || selfie != null) {
+    final needed = [idFront, idBack, selfie, if (needsLicence) licence];
+    final done = needed.where((item) => item?.state == UploadState.done).length;
+    if (done == needed.length) return SectionStatus.complete;
+    if (done > 0 || needed.any((item) => item != null)) {
       return SectionStatus.inProgress;
     }
     return SectionStatus.notStarted;
@@ -447,6 +455,7 @@ class OnboardingDraft {
     'delivery': delivery?.name,
     'premisesAddress': premisesAddress,
     'primaryServiceId': primaryServiceId,
+    'extraServiceIds': extraServiceIds,
     'subServices': subServices,
     'yearsExperience': yearsExperience,
     'experienceSummary': experienceSummary,
@@ -481,6 +490,7 @@ class OnboardingDraft {
     'idFront': idFront?.toJson(),
     'idBack': idBack?.toJson(),
     'selfie': selfie?.toJson(),
+    'licence': licence?.toJson(),
     'agreedToStandards': agreedToStandards,
     'currentStep': currentStep,
   };
@@ -511,6 +521,7 @@ class OnboardingDraft {
       delivery: enumOrNull(ServiceDelivery.values, json['delivery']),
       premisesAddress: json['premisesAddress'] as String? ?? '',
       primaryServiceId: json['primaryServiceId'] as String?,
+      extraServiceIds: [...?(json['extraServiceIds'] as List?)?.cast<String>()],
       subServices: [...?(json['subServices'] as List?)?.cast<String>()],
       yearsExperience: json['yearsExperience'] as int?,
       experienceSummary: json['experienceSummary'] as String? ?? '',
@@ -539,6 +550,7 @@ class OnboardingDraft {
       idFront: upload(json['idFront']),
       idBack: upload(json['idBack']),
       selfie: upload(json['selfie']),
+      licence: upload(json['licence']),
       agreedToStandards: json['agreedToStandards'] as bool? ?? false,
       currentStep: json['currentStep'] as int? ?? 0,
     );

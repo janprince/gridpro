@@ -1,394 +1,396 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:grid_professionals/core/models/models.dart';
 import 'package:grid_professionals/core/theme/app_theme.dart';
 import 'package:grid_professionals/core/utils/formatters.dart';
 import 'package:grid_professionals/core/widgets/app_widgets.dart';
-import 'package:grid_professionals/data/mock_data.dart';
+import 'package:grid_professionals/state/work_state.dart';
 
-class EarningsScreen extends StatelessWidget {
+/// Balance, recent totals, and every earning and payout by day. GRID pays
+/// out; this app only reports.
+class EarningsScreen extends ConsumerWidget {
   const EarningsScreen({super.key});
+
   @override
-  Widget build(BuildContext context) => AppPage(
-    children: [
-      Row(
-        children: [
-          Expanded(
-            child: Text(
-              'Earnings',
-              style: Theme.of(context).textTheme.headlineMedium,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final overview = ref.watch(earningsProvider);
+    final payout = ref.watch(profileProvider).value?.payout;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AppHeader(title: 'Earnings'),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () => ref.refresh(earningsProvider.future),
+            child: AppPage(
+              children: switch (overview) {
+                AsyncData(:final value) => _content(context, value, payout),
+                AsyncError() => [
+                  RetryState(
+                    title: 'Could not load your earnings',
+                    message: 'Check your connection and try again.',
+                    onRetry: () => ref.invalidate(earningsProvider),
+                  ),
+                ],
+                _ => const [
+                  LoadingSkeleton(height: 168, radius: AppRadius.xl),
+                  SizedBox(height: 12),
+                  LoadingSkeleton(height: 76, radius: AppRadius.md),
+                ],
+              },
             ),
           ),
-          IconButton(
-            onPressed: () => context.push('/job-history'),
-            icon: const Icon(Icons.history),
-          ),
-        ],
-      ),
-      const SizedBox(height: 16),
-      const AppCard(
-        color: AppColors.forest,
-        padding: EdgeInsets.all(20),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _content(
+    BuildContext context,
+    EarningsOverview overview,
+    PayoutAccount? payout,
+  ) {
+    final activity = <(DateTime, Widget)>[
+      for (final item in overview.earnings)
+        (item.date, _EarningTile(earning: item)),
+      for (final item in overview.payouts)
+        (item.date, _PayoutTile(payout: item)),
+    ]..sort((a, b) => b.$1.compareTo(a.$1));
+
+    final rows = <Widget>[];
+    String? day;
+    for (final (date, tile) in activity) {
+      final label = formatDay(date);
+      if (label != day) {
+        rows.add(DateChip(label));
+        day = label;
+      }
+      rows.add(
+        Padding(padding: const EdgeInsets.only(bottom: 12), child: tile),
+      );
+    }
+
+    return [
+      NavyPanel(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'AVAILABLE BALANCE',
-              style: TextStyle(
-                color: AppColors.mint,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1,
+              style: AppText.overline.copyWith(color: Colors.white70),
+            ),
+            const SizedBox(height: 10),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                formatCurrency(overview.available),
+                style: AppText.amountXL.copyWith(color: Colors.white),
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 4),
             Text(
-              'GH₵ 1,145.00',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 32,
-                fontWeight: FontWeight.w800,
+              payout == null
+                  ? 'Add a payout account so GRID can pay you.'
+                  : 'GRID pays this out to ${payout.providerName}.',
+              style: AppText.caption.copyWith(
+                color: Colors.white70,
+                fontSize: 13.5,
               ),
             ),
-            SizedBox(height: 8),
-            Text(
-              'Pending payout: GH₵ 780.00',
-              style: TextStyle(color: AppColors.mint),
+            const SizedBox(height: 18),
+            OnNavyButton(
+              label: 'Payout account',
+              onPressed: () => context.push('/payout-account'),
             ),
           ],
         ),
       ),
+      if (overview.pending > 0) ...[
+        const SizedBox(height: 12),
+        StatusBanner(
+          kind: StatusKind.pending,
+          title: '${formatCurrency(overview.pending)} waiting on customers',
+          message:
+              'It joins your balance when each customer confirms the job, '
+              'or after a day if they don\'t.',
+        ),
+      ],
       const SizedBox(height: 12),
       Row(
         children: [
-          const Expanded(
-            child: MetricCard(
-              label: 'Today',
-              value: 'GH₵ 320',
-              icon: Icons.today,
+          Expanded(
+            child: StatTile(
+              label: 'Last 7 days',
+              value: formatCurrency(overview.last7Days),
             ),
           ),
           const SizedBox(width: 10),
-          const Expanded(
-            child: MetricCard(
-              label: 'This week',
-              value: 'GH₵ 1,450',
-              icon: Icons.date_range,
+          Expanded(
+            child: StatTile(
+              label: 'Last 30 days',
+              value: formatCurrency(overview.last30Days),
             ),
           ),
         ],
       ),
-      const SizedBox(height: 10),
-      const MetricCard(
-        label: 'This month',
-        value: 'GH₵ 5,860.00',
-        icon: Icons.calendar_month,
-        caption: '12 completed jobs',
+      const SectionHeader('Activity'),
+      if (rows.isEmpty)
+        const EmptyState(
+          title: 'Nothing here yet',
+          message:
+              'Each finished job shows here with what it paid, followed by '
+              'the payouts GRID sends you.',
+        )
+      else
+        ...rows,
+    ];
+  }
+}
+
+class _EarningTile extends StatelessWidget {
+  const _EarningTile({required this.earning});
+  final Earning earning;
+
+  @override
+  Widget build(BuildContext context) => _ActivityTile(
+    time: formatTime(earning.date),
+    status: switch (earning.status) {
+      EarningStatus.pending => const StatusPill(
+        label: 'Awaiting customer',
+        kind: StatusKind.neutral,
       ),
-      const SectionHeader('Earnings trend'),
-      const _TrendChart(),
-      SectionHeader(
-        'Payouts',
-        action: 'View details',
-        onAction: () => context.push('/payouts'),
+      EarningStatus.available => const StatusPill(
+        label: 'In balance',
+        kind: StatusKind.pending,
       ),
-      AppCard(
-        onTap: () => context.push('/payouts'),
-        child: const Row(
+      EarningStatus.paid => const StatusPill(
+        label: 'Paid out',
+        kind: StatusKind.success,
+      ),
+    },
+    leading: ServiceBadge(service: earning.service, size: 42),
+    title: earning.title,
+    subtitle: '${earning.customer} · fee ${formatCurrency(earning.fee)}',
+    amount: earning.net,
+  );
+}
+
+class _PayoutTile extends StatelessWidget {
+  const _PayoutTile({required this.payout});
+  final Payout payout;
+
+  @override
+  Widget build(BuildContext context) => _ActivityTile(
+    time: formatTime(payout.date),
+    status: switch (payout.status) {
+      PayoutStatus.paid => const StatusPill(
+        label: 'Sent',
+        kind: StatusKind.success,
+      ),
+      PayoutStatus.scheduled => const StatusPill(
+        label: 'On its way',
+        kind: StatusKind.pending,
+      ),
+      PayoutStatus.failed => const StatusPill(
+        label: 'Failed',
+        kind: StatusKind.danger,
+      ),
+    },
+    leading: Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: AppColors.navySoft,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Icon(
+        Icons.north_east_rounded,
+        size: 21,
+        color: AppColors.navy,
+      ),
+    ),
+    title: 'Payout ${payout.reference}',
+    subtitle: payout.destination,
+    amount: payout.amount,
+  );
+}
+
+class _ActivityTile extends StatelessWidget {
+  const _ActivityTile({
+    required this.time,
+    required this.status,
+    required this.leading,
+    required this.title,
+    required this.subtitle,
+    required this.amount,
+  });
+  final String time;
+  final Widget status;
+  final Widget leading;
+  final String title;
+  final String subtitle;
+  final double amount;
+
+  @override
+  Widget build(BuildContext context) => AppCard(
+    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
           children: [
-            Icon(Icons.schedule, color: AppColors.warning, size: 32),
-            SizedBox(width: 14),
+            Expanded(flex: 3, child: Text(time, style: AppText.caption)),
+            Flexible(
+              flex: 2,
+              child: Align(alignment: Alignment.centerRight, child: status),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            leading,
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Next payout',
-                    style: TextStyle(fontWeight: FontWeight.w800),
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.subtitle.copyWith(fontSize: 16),
                   ),
+                  const SizedBox(height: 2),
                   Text(
-                    'GH₵ 780.00 • Fri, 17 Jul',
-                    style: TextStyle(color: AppColors.muted),
-                  ),
-                  Text(
-                    'MTN MoMo •••• 0192',
-                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.caption.copyWith(fontSize: 13.5),
                   ),
                 ],
               ),
             ),
-            StatusChip(status: JobStatus.payoutPending),
+            const SizedBox(width: 10),
+            Amount(amount),
           ],
         ),
-      ),
-      const SectionHeader('Job-by-job earnings'),
-      for (final item in MockData.earnings)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: AppCard(
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.label,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                          Text(
-                            '${item.jobId} • ${formatDate(item.date)}',
-                            style: const TextStyle(
-                              color: AppColors.muted,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      formatCurrency(item.net),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-                const Divider(height: 24),
-                Row(
-                  children: [
-                    Text(
-                      'Gross ${formatCurrency(item.gross)}',
-                      style: const TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      'GRID commission ${formatCurrency(item.commission)}',
-                      style: const TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-    ],
+      ],
+    ),
   );
 }
 
-class _TrendChart extends StatelessWidget {
-  const _TrendChart();
+/// Where GRID sends earnings. Changes go through support so a stolen phone
+/// can't redirect someone's pay.
+class PayoutAccountScreen extends ConsumerWidget {
+  const PayoutAccountScreen({super.key});
+
   @override
-  Widget build(BuildContext context) {
-    const values = [30.0, 58.0, 42.0, 86.0, 65.0, 104.0, 78.0];
-    return AppCard(
-      child: SizedBox(
-        height: 150,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            for (var i = 0; i < values.length; i++)
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(profileProvider);
+    final account = profile.value?.payout;
+    return FocusPage(
+      title: 'Payout account',
+      onBack: () => context.pop(),
+      actions: [
+        if (profile.hasValue)
+          SecondaryButton(
+            label: account == null
+                ? 'Ask support to add one'
+                : 'Change account',
+            onPressed: () => context.push('/report-issue?about=payout'),
+          ),
+      ],
+      children: [
+        if (profile.isLoading && !profile.hasValue)
+          const LoadingSkeleton(height: 200, radius: AppRadius.xl)
+        else if (profile.hasError && !profile.hasValue)
+          RetryState(
+            title: 'Could not load your payout account',
+            message: 'Check your connection and try again.',
+            onRetry: () => ref.invalidate(profileProvider),
+          )
+        else if (account == null)
+          const EmptyState(
+            title: 'No payout account yet',
+            message:
+                'GRID needs a Mobile Money wallet or bank account before it '
+                'can pay you, and before you can go online.',
+          )
+        else ...[
+          Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7E0),
+              borderRadius: BorderRadius.circular(AppRadius.xl),
+            ),
+            child: Stack(
+              fit: StackFit.passthrough,
+              children: [
+                const CornerArcs(color: Color(0xFFFCEBB8)),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 30),
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       Container(
-                        height: values[i],
+                        width: 60,
+                        height: 60,
                         decoration: BoxDecoration(
-                          color: i == 5 ? AppColors.forest : AppColors.mint,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(6),
-                          ),
+                          color: AppColors.navy,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Icon(
+                          account.mobileMoney
+                              ? Icons.phone_iphone_rounded
+                              : Icons.account_balance_rounded,
+                          color: AppColors.amber,
+                          size: 30,
                         ),
                       ),
-                      const SizedBox(height: 7),
+                      const SizedBox(height: 16),
                       Text(
-                        ['M', 'T', 'W', 'T', 'F', 'S', 'S'][i],
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.muted,
-                        ),
+                        account.providerName,
+                        textAlign: TextAlign.center,
+                        style: AppText.title,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        account.verified
+                            ? 'Verified · Default for payouts'
+                            : 'Default for payouts',
+                        style: AppText.caption,
                       ),
                     ],
                   ),
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          DetailGroup(
+            rows: [
+              DetailRow(
+                label: 'Name on account',
+                value: account.accountName.toUpperCase(),
               ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class PayoutDetailsScreen extends StatelessWidget {
-  const PayoutDetailsScreen({super.key});
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Payout details')),
-    body: AppPage(
-      children: [
-        const MetricCard(
-          label: 'Available payout balance',
-          value: 'GH₵ 1,145.00',
-          icon: Icons.account_balance_wallet,
-          dark: true,
-          caption: 'GH₵ 780.00 currently pending',
-        ),
-        const SectionHeader('Linked payout method'),
-        const AppCard(
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: Color(0xFFFFD43B),
-                child: Text(
-                  'MTN',
-                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900),
-                ),
+              DetailRow(
+                label: account.mobileMoney ? 'Wallet number' : 'Account number',
+                value: account.maskedNumber,
               ),
-              SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'MTN Mobile Money',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    Text(
-                      '+233 24 •••• 0192',
-                      style: TextStyle(color: AppColors.muted),
-                    ),
-                    Text(
-                      'Mock payout method',
-                      style: TextStyle(color: AppColors.warning, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.verified_outlined, color: AppColors.teal),
             ],
           ),
-        ),
-        const SizedBox(height: 10),
-        OutlinedButton.icon(
-          onPressed: () {},
-          icon: const Icon(Icons.account_balance_outlined),
-          label: const Text('Add bank account placeholder'),
-        ),
-        const SectionHeader('Payout history'),
-        for (final payout in MockData.payouts)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: AppCard(
-              child: Row(
-                children: [
-                  Icon(
-                    payout.status == PayoutStatus.paid
-                        ? Icons.check_circle
-                        : Icons.schedule,
-                    color: payout.status == PayoutStatus.paid
-                        ? AppColors.teal
-                        : AppColors.warning,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          formatCurrency(payout.amount),
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        Text(
-                          '${payout.id} • ${formatDate(payout.date)}',
-                          style: const TextStyle(
-                            color: AppColors.muted,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    payout.status.name,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ],
-              ),
-            ),
+          const SizedBox(height: 16),
+          const StatusBanner(
+            kind: StatusKind.neutral,
+            title: 'Changes are checked by GRID',
+            message:
+                'To protect your pay, a new account is confirmed by our '
+                'support team before any money goes to it.',
           ),
-        const SizedBox(height: 16),
-        SupportActionCard(
-          icon: Icons.support_agent,
-          title: 'Payout issue',
-          subtitle: 'Report a delay or incorrect payout.',
-          onTap: () => context.push('/report-issue'),
-        ),
+        ],
       ],
-    ),
-  );
-}
-
-class JobHistoryScreen extends StatelessWidget {
-  const JobHistoryScreen({super.key});
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Job history')),
-    body: AppPage(
-      children: [
-        const Row(
-          children: [
-            Expanded(
-              child: TextField(
-                decoration: InputDecoration(
-                  prefixIcon: Icon(Icons.search),
-                  hintText: 'Search jobs',
-                ),
-              ),
-            ),
-            SizedBox(width: 10),
-            IconButton(onPressed: null, icon: Icon(Icons.filter_list)),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          children: const [
-            ChoiceChip(label: Text('All'), selected: true),
-            ChoiceChip(label: Text('Completed'), selected: false),
-            ChoiceChip(label: Text('Cancelled'), selected: false),
-          ],
-        ),
-        const SectionHeader('July 2026'),
-        for (final job in MockData.jobs.where(
-          (item) => item.status == JobStatus.paid,
-        ))
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: JobCard(
-              job: job,
-              onTap: () => context.push('/receipt/${job.id}'),
-            ),
-          ),
-        const SectionHeader('Cancelled'),
-        const EmptyStateCard(
-          icon: Icons.event_busy,
-          title: 'No cancelled jobs',
-          message:
-              'Cancelled and declined work will be listed here with reasons.',
-        ),
-      ],
-    ),
-  );
+    );
+  }
 }

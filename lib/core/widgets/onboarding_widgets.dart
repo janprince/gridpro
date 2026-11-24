@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:grid_professionals/core/models/onboarding_models.dart';
 import 'package:grid_professionals/core/theme/app_theme.dart';
+import 'package:grid_professionals/core/widgets/cards.dart';
+import 'package:grid_professionals/core/widgets/forms.dart';
 import 'package:grid_professionals/data/country/country_config.dart';
 
-/// Compact stage-grouped progress indicator for the onboarding wizard:
-/// one bar segment per stage, with a "stage · step x of y" caption.
+/// Stage-grouped progress bar for the onboarding wizard. One segment per
+/// stage, filling as its steps close.
 class OnboardingProgress extends StatelessWidget {
   const OnboardingProgress({super.key, required this.step});
   final OnboardingStep step;
@@ -15,26 +17,15 @@ class OnboardingProgress extends StatelessWidget {
     final position = step.index + 1;
     return Semantics(
       label: 'Progress: ${step.stage.title}, step $position of $totalSteps',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              for (final stage in OnboardingStage.values) ...[
-                Expanded(
-                  flex: stage.steps.length,
-                  child: _StageSegment(stage: stage, current: step),
-                ),
-                if (stage != OnboardingStage.values.last)
-                  const SizedBox(width: 4),
-              ],
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${step.stage.title} · Step $position of $totalSteps',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          for (final stage in OnboardingStage.values) ...[
+            Expanded(
+              flex: stage.steps.length,
+              child: _StageSegment(stage: stage, current: step),
+            ),
+            if (stage != OnboardingStage.values.last) const SizedBox(width: 4),
+          ],
         ],
       ),
     );
@@ -55,91 +46,38 @@ class _StageSegment extends StatelessWidget {
       1.0,
     );
     return ClipRRect(
-      borderRadius: BorderRadius.circular(3),
-      child: LinearProgressIndicator(value: fraction, minHeight: 5),
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: fraction, end: fraction),
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+        builder: (context, value, _) => LinearProgressIndicator(
+          value: value,
+          minHeight: 4,
+          color: AppColors.navy,
+          backgroundColor: AppColors.line,
+        ),
+      ),
     );
   }
 }
 
-/// Service photo with a tonal initial-letter fallback for categories that do
-/// not have photography yet.
-class ServiceImage extends StatelessWidget {
-  const ServiceImage({
-    super.key,
-    this.imageAsset,
-    required this.name,
-    this.size = 48,
-    this.radius = AppRadius.md,
-  });
-
-  /// Thumbnail for legacy job-category names used across job screens.
-  factory ServiceImage.forCategory(
-    String category, {
-    double size = 44,
-    double radius = AppRadius.md,
-  }) => ServiceImage(
-    imageAsset: assetForCategory(category),
-    name: category,
-    size: size,
-    radius: radius,
-  );
-
-  /// Photo asset for a job-category name, or null when the category has no
-  /// photography yet.
-  static String? assetForCategory(String category) {
-    final normalized = category.toLowerCase();
-    for (final entry in _categoryAssets.entries) {
-      if (normalized.contains(entry.key)) return entry.value;
-    }
-    return null;
-  }
-
-  static const _categoryAssets = {
-    'electric': 'assets/images/services/electrical.jpg',
-    'plumb': 'assets/images/services/plumbing.jpg',
-    'clean': 'assets/images/services/cleaning.jpg',
-    'ac ': 'assets/images/services/ac_repair.jpg',
-    'ac repair': 'assets/images/services/ac_repair.jpg',
-    'garden': 'assets/images/services/gardening.jpg',
-    'carpent': 'assets/images/services/carpentry.jpg',
-  };
-
-  final String? imageAsset;
-  final String name;
-  final double size;
-  final double radius;
+/// Quiet progress caption above a wizard step title.
+class OnboardingStepEyebrow extends StatelessWidget {
+  const OnboardingStepEyebrow({super.key, required this.step});
+  final OnboardingStep step;
 
   @override
-  Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(radius),
-    child: imageAsset != null
-        ? Image.asset(
-            imageAsset!,
-            width: size,
-            height: size,
-            fit: BoxFit.cover,
-            semanticLabel: name,
-          )
-        : Container(
-            width: size,
-            height: size,
-            color: AppColors.mint,
-            alignment: Alignment.center,
-            child: Text(
-              name.isEmpty ? '?' : name[0].toUpperCase(),
-              style: TextStyle(
-                fontSize: size * 0.4,
-                fontWeight: FontWeight.w800,
-                color: AppColors.forest,
-              ),
-            ),
-          ),
+  Widget build(BuildContext context) => Text(
+    '${step.stage.title.toUpperCase()}  ·  '
+    'STEP ${step.index + 1} OF ${OnboardingStep.values.length}',
+    style: AppText.overline,
   );
 }
 
-/// Image-led selection card for choosing a primary service.
-class ServiceCard extends StatelessWidget {
-  const ServiceCard({
+/// One service as a large selectable card on the services step.
+class ServiceOptionCard extends StatelessWidget {
+  const ServiceOptionCard({
     super.key,
     required this.service,
     required this.selected,
@@ -151,80 +89,50 @@ class ServiceCard extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    selected: selected,
-    label: service.name,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadius.lg),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          border: Border.all(
-            color: selected ? AppColors.forest : AppColors.line,
-            width: selected ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
+  Widget build(BuildContext context) {
+    final kind =
+        ServiceKindInfo.fromName(service.id) ??
+        ServiceKindInfo.fromName(service.name) ??
+        ServiceKind.cleaning;
+    return Semantics(
+      button: true,
+      checked: selected,
+      label: service.name,
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: ServiceHeroCard(
+          service: kind,
+          selected: selected,
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  service.imageAsset != null
-                      ? Image.asset(
-                          service.imageAsset!,
-                          fit: BoxFit.cover,
-                          excludeFromSemantics: true,
-                        )
-                      : Container(
-                          color: AppColors.surfaceSubtle,
-                          alignment: Alignment.center,
-                          child: Text(
-                            service.name[0].toUpperCase(),
-                            style: const TextStyle(
-                              fontSize: 30,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.forest,
-                            ),
-                          ),
-                        ),
-                  if (selected)
-                    const Positioned(
-                      top: 8,
-                      right: 8,
-                      child: CircleAvatar(
-                        radius: 12,
-                        backgroundColor: AppColors.forest,
-                        child: Icon(Icons.check, size: 15, color: Colors.white),
-                      ),
-                    ),
+                  ServiceBadge(service: kind, size: 46),
+                  const Spacer(),
+                  CheckMark(selected: selected),
                 ],
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: Text(
-                service.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  height: 1.25,
+              const SizedBox(height: 18),
+              Text(service.name, style: AppText.title),
+              if (service.summary != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  service.summary!,
+                  style: AppText.bodyMuted.copyWith(
+                    color: kind.palette.ink.withValues(alpha: 0.8),
+                  ),
                 ),
-              ),
-            ),
-          ],
+              ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// Working-days and hours editor.
@@ -255,30 +163,32 @@ class ScheduleEditor extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text('Working days', style: Theme.of(context).textTheme.titleSmall),
-      const SizedBox(height: 8),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      const FieldLabel(label: 'Working days'),
+      const SizedBox(height: 10),
+      Row(
         children: [
-          for (final day in allDays)
-            FilterChip(
-              label: Text(day),
-              selected: workingDays.contains(day),
-              onSelected: (value) {
-                final updated = value
-                    ? [...workingDays, day]
-                    : workingDays.where((item) => item != day).toList();
-                onDaysChanged(
-                  allDays.where((item) => updated.contains(item)).toList(),
-                );
-              },
+          for (final day in allDays) ...[
+            Expanded(
+              child: _DayToggle(
+                day: day,
+                selected: workingDays.contains(day),
+                onChanged: (value) {
+                  final updated = value
+                      ? [...workingDays, day]
+                      : workingDays.where((item) => item != day).toList();
+                  onDaysChanged(
+                    allDays.where((item) => updated.contains(item)).toList(),
+                  );
+                },
+              ),
             ),
+            if (day != allDays.last) const SizedBox(width: 6),
+          ],
         ],
       ),
-      const SizedBox(height: 20),
-      Text('Working hours', style: Theme.of(context).textTheme.titleSmall),
-      const SizedBox(height: 8),
+      const SizedBox(height: 24),
+      const FieldLabel(label: 'Working hours'),
+      const SizedBox(height: 10),
       Row(
         children: [
           Expanded(
@@ -289,7 +199,7 @@ class ScheduleEditor extends StatelessWidget {
                   onHoursChanged(value, value < endHour ? endHour : value + 1),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: _HourButton(
               label: 'To',
@@ -301,6 +211,52 @@ class ScheduleEditor extends StatelessWidget {
         ],
       ),
     ],
+  );
+}
+
+class _DayToggle extends StatelessWidget {
+  const _DayToggle({
+    required this.day,
+    required this.selected,
+    required this.onChanged,
+  });
+  final String day;
+  final bool selected;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    selected: selected,
+    label: day,
+    excludeSemantics: true,
+    child: InkWell(
+      onTap: () => onChanged(!selected),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        height: 48,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? AppColors.navy : AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          border: Border.all(
+            color: selected ? AppColors.navy : AppColors.lineStrong,
+          ),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            day,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+              color: selected ? Colors.white : AppColors.muted,
+            ),
+          ),
+        ),
+      ),
+    ),
   );
 }
 
@@ -320,47 +276,30 @@ class _HourButton extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     button: true,
     label: '$label: ${ScheduleEditor.formatHour(hour)}',
+    excludeSemantics: true,
     child: InkWell(
       onTap: () async {
-        final hours = [for (var h = minHour; h <= 22; h++) h];
-        final choice = await showModalBottomSheet<int>(
-          context: context,
-          showDragHandle: true,
-          builder: (context) => SafeArea(
-            child: SizedBox(
-              height: 320,
-              child: ListView(
-                children: [
-                  for (final h in hours)
-                    ListTile(
-                      title: Text(ScheduleEditor.formatHour(h)),
-                      trailing: h == hour
-                          ? const Icon(Icons.check, color: AppColors.forest)
-                          : null,
-                      onTap: () => Navigator.pop(context, h),
-                    ),
-                ],
-              ),
-            ),
-          ),
+        final choice = await showOptionPicker<int>(
+          context,
+          title: label == 'From' ? 'Start time' : 'Finish time',
+          options: [for (var h = minHour; h <= 22; h++) h],
+          labelOf: ScheduleEditor.formatHour,
+          selected: hour,
         );
         if (choice != null) onSelected(choice);
       },
-      borderRadius: BorderRadius.circular(AppRadius.md),
+      borderRadius: BorderRadius.circular(AppRadius.field),
       child: Container(
         height: AppSizes.controlHeight,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppColors.line),
+          borderRadius: BorderRadius.circular(AppRadius.field),
+          border: Border.all(color: AppColors.lineStrong),
         ),
         child: Row(
           children: [
-            Text(
-              label,
-              style: const TextStyle(fontSize: 13, color: AppColors.muted),
-            ),
+            Text(label, style: AppText.caption.copyWith(fontSize: 13)),
             const SizedBox(width: 8),
             Expanded(
               child: FittedBox(
@@ -368,9 +307,8 @@ class _HourButton extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 child: Text(
                   ScheduleEditor.formatHour(hour),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
+                  style: AppText.subtitle.copyWith(
+                    fontFeatures: AppText.tabular,
                   ),
                 ),
               ),
@@ -397,35 +335,33 @@ class UploadTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (background, border) = switch (item.state) {
-      UploadState.failed => (AppColors.dangerBg, AppColors.danger),
-      UploadState.done => (AppColors.surfaceSubtle, AppColors.line),
-      UploadState.uploading => (AppColors.surfaceSubtle, AppColors.line),
-    };
+    final failed = item.state == UploadState.failed;
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: background,
+        color: failed ? AppColors.dangerBg : AppColors.surfaceSubtle,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: border),
+        border: Border.all(
+          color: failed ? AppColors.dangerLine : AppColors.line,
+        ),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           switch (item.state) {
             UploadState.done => const Icon(
-              Icons.check_circle,
+              Icons.check_circle_rounded,
               color: AppColors.success,
             ),
             UploadState.failed => const Icon(
-              Icons.error_outline,
+              Icons.error_outline_rounded,
               color: AppColors.danger,
             ),
             UploadState.uploading => SizedBox(
               width: 22,
               height: 22,
               child: CircularProgressIndicator(
-                strokeWidth: 2.6,
+                strokeWidth: 2.4,
                 value: item.progress == 0 ? null : item.progress,
                 semanticsLabel: 'Uploading ${item.label}',
               ),
@@ -453,7 +389,7 @@ class UploadTile extends StatelessWidget {
             ),
             UploadState.uploading => Text(
               'Uploading…',
-              style: Theme.of(context).textTheme.bodySmall,
+              style: AppText.caption.copyWith(fontSize: 11.5),
             ),
           },
         ],
@@ -507,20 +443,21 @@ class AddUploadTile extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     button: true,
     label: label,
+    excludeSemantics: true,
     child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppRadius.md),
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: AppColors.navySoft,
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppColors.line),
+          border: Border.all(color: const Color(0xFFC9D5E6)),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: AppColors.forest),
+            Icon(icon, color: AppColors.navy),
             const SizedBox(height: 6),
             Text(
               label,
@@ -530,6 +467,7 @@ class AddUploadTile extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
+                color: AppColors.navy,
               ),
             ),
           ],
@@ -539,7 +477,7 @@ class AddUploadTile extends StatelessWidget {
   );
 }
 
-/// Row on the application hub and review screens showing a section's status.
+/// Row on the application hub showing a section's status.
 class SectionStatusTile extends StatelessWidget {
   const SectionStatusTile({
     super.key,
@@ -556,61 +494,91 @@ class SectionStatusTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (icon, color, statusLabel) = switch (status) {
-      SectionStatus.complete => (
-        Icons.check_circle,
-        AppColors.success,
-        'Complete',
-      ),
-      SectionStatus.inProgress => (
-        Icons.timelapse,
-        AppColors.warningText,
-        'In progress',
-      ),
-      SectionStatus.notStarted => (
-        Icons.circle_outlined,
-        AppColors.muted,
-        'Not started',
-      ),
+    final statusLabel = switch (status) {
+      SectionStatus.complete => 'Complete',
+      SectionStatus.inProgress => 'In progress',
+      SectionStatus.notStarted => 'Not started',
     };
     return Semantics(
       button: true,
       label: '$title. $statusLabel.',
+      excludeSemantics: true,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AppRadius.md),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+          padding: const EdgeInsets.fromLTRB(14, 13, 10, 13),
           child: Row(
             children: [
-              Icon(icon, color: color, size: 22),
-              const SizedBox(width: 12),
+              _StatusMark(status: status),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14.5,
+                    Text(title, style: AppText.subtitle),
+                    // Only a real summary earns a second line.
+                    if (summary != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        summary!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.caption,
                       ),
-                    ),
-                    Text(
-                      summary ?? statusLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+                    ],
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              const Icon(Icons.chevron_right, color: AppColors.muted),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.faint),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+class _StatusMark extends StatelessWidget {
+  const _StatusMark({required this.status});
+  final SectionStatus status;
+
+  @override
+  Widget build(BuildContext context) => switch (status) {
+    SectionStatus.complete => Container(
+      width: 24,
+      height: 24,
+      decoration: const BoxDecoration(
+        color: AppColors.success,
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(Icons.check_rounded, size: 16, color: Colors.white),
+    ),
+    SectionStatus.inProgress => Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.warning, width: 2),
+      ),
+      child: Center(
+        child: Container(
+          width: 8,
+          height: 8,
+          decoration: const BoxDecoration(
+            color: AppColors.warning,
+            shape: BoxShape.circle,
+          ),
+        ),
+      ),
+    ),
+    SectionStatus.notStarted => Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.lineStrong, width: 1.6),
+      ),
+    ),
+  };
 }

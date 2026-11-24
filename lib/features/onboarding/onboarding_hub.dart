@@ -26,107 +26,134 @@ class OnboardingHubScreen extends ConsumerWidget {
     final total = OnboardingStep.values.length;
     final allComplete = completed == total;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Your application'),
-        automaticallyImplyLeading: false,
+    return FocusPage(
+      footnote: const Text(
+        'Progress saves automatically — pick up any time.',
+        style: AppText.caption,
+        textAlign: TextAlign.center,
       ),
-      body: SafeArea(
-        child: AppPage(
-          children: [
-            Text(
-              allComplete
-                  ? 'Everything is filled in. Review your application and '
-                        'submit it for verification.'
-                  : 'Complete each section to submit your profile for '
-                        'verification. Your progress saves automatically.',
-              style: const TextStyle(color: AppColors.muted),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: completed / total,
-                      minHeight: 7,
-                      semanticsLabel: 'Application progress',
+      actions: [
+        PrimaryButton(
+          label: allComplete ? 'Review & submit' : 'Continue setup',
+          onPressed: () {
+            if (allComplete) {
+              context.push('/onboarding/review');
+            } else {
+              controller.goToStep(controller.firstIncompleteStep);
+              context.push('/onboarding/flow');
+            }
+          },
+        ),
+      ],
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 24),
+          child: GridMark(compact: true),
+        ),
+        ScreenIntro(
+          title: 'Your application',
+          subtitle: allComplete
+              ? 'Everything is filled in. Review it and submit.'
+              : 'Finish each section to get verified and start taking jobs.',
+        ),
+        const SizedBox(height: 22),
+        NavyPanel(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Flexible(
+                    flex: 3,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.bottomLeft,
+                      child: Text(
+                        '$completed of $total',
+                        style: AppText.amountXL.copyWith(
+                          color: Colors.white,
+                          fontSize: 28,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  '$completed of $total',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ],
-            ),
-            for (final stage in OnboardingStage.values) ...[
-              SectionHeader(stage.title),
-              AppCard(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                child: Column(
-                  children: [
-                    for (final step in stage.steps) ...[
-                      SectionStatusTile(
-                        title: step.title,
-                        status: draft.statusOf(step, config),
-                        summary:
-                            draft.statusOf(step, config) ==
-                                SectionStatus.notStarted
-                            ? null
-                            : sectionSummary(draft, config, step),
-                        onTap: () {
-                          controller.goToStep(step);
-                          context.push('/onboarding/flow');
-                        },
+                  const SizedBox(width: 10),
+                  Flexible(
+                    flex: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        'sections done',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.caption.copyWith(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
                       ),
-                      if (step != stage.steps.last) const Divider(height: 1),
-                    ],
-                  ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                child: LinearProgressIndicator(
+                  value: completed / total,
+                  minHeight: 6,
+                  color: AppColors.amber,
+                  backgroundColor: Colors.white24,
+                  semanticsLabel: 'Application progress',
                 ),
               ),
             ],
-            const SizedBox(height: 20),
-            Center(
-              child: TextButton(
-                onPressed: () async {
-                  final confirmed = await showConfirmationSheet(
-                    context,
-                    title: 'Start over?',
-                    message:
-                        'This clears everything you have entered so far. '
-                        'This cannot be undone.',
-                    confirmLabel: 'Clear application',
-                  );
-                  if (confirmed) {
-                    await controller.reset();
-                    await ref.read(appControllerProvider.notifier).resetDemo();
-                    if (context.mounted) context.go('/welcome');
-                  }
-                },
-                child: const Text('Start over'),
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
-      bottomNavigationBar: BottomActionBar(
-        label: allComplete ? 'Review & submit' : 'Continue setup',
-        hint: 'Progress saves automatically — pick up any time.',
-        onPressed: () {
-          if (allComplete) {
-            context.push('/onboarding/review');
-          } else {
-            controller.goToStep(controller.firstIncompleteStep);
-            context.push('/onboarding/flow');
-          }
-        },
-      ),
+        for (final stage in OnboardingStage.values) ...[
+          SectionHeader(stage.title),
+          MenuGroupShell(
+            children: [
+              for (final step in stage.steps)
+                SectionStatusTile(
+                  title: step.title,
+                  status: draft.statusOf(step, config),
+                  summary:
+                      draft.statusOf(step, config) == SectionStatus.notStarted
+                      ? null
+                      : sectionSummary(draft, config, step),
+                  onTap: () {
+                    controller.goToStep(step);
+                    context.push('/onboarding/flow');
+                  },
+                ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 16),
+        Center(
+          child: TextButton(
+            onPressed: () async {
+              final confirmed = await showConfirmationSheet(
+                context,
+                title: 'Start over?',
+                message:
+                    'This clears everything you have entered so far. '
+                    'This cannot be undone.',
+                confirmLabel: 'Clear application',
+              );
+              if (confirmed) {
+                await controller.reset();
+                await ref.read(appControllerProvider.notifier).signOut();
+                if (context.mounted) context.go('/welcome');
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: AppColors.muted),
+            child: const Text('Start over'),
+          ),
+        ),
+      ],
     );
   }
 }

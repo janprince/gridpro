@@ -8,7 +8,6 @@ String? sectionSummary(
   CountryConfig config,
   OnboardingStep step,
 ) {
-  final service = config.serviceById(draft.primaryServiceId);
   switch (step) {
     case OnboardingStep.providerType:
       return switch (draft.providerType) {
@@ -22,9 +21,13 @@ String? sectionSummary(
           : draft.fullName.trim();
       return name.isEmpty ? null : name;
     case OnboardingStep.services:
-      if (service == null) return null;
+      final names = [
+        for (final id in draft.serviceIds) ?config.serviceById(id)?.name,
+      ];
+      if (names.isEmpty) return null;
       final subs = draft.subServices.length;
-      return subs == 0 ? service.name : '${service.name} · $subs selected';
+      final chosen = names.join(', ');
+      return subs == 0 ? chosen : '$chosen · $subs skills';
     case OnboardingStep.experience:
       if (draft.yearsExperience == null) return null;
       final years = draft.yearsExperience!;
@@ -39,16 +42,9 @@ String? sectionSummary(
       if (draft.workingDays.isEmpty) return null;
       return '${draft.workingDays.length} days a week';
     case OnboardingStep.pricing:
-      final symbol = config.currencySymbol;
-      return switch (service?.pricingModel) {
-        PricingModel.calloutQuote when draft.calloutFee != null =>
-          '$symbol ${draft.calloutFee!.toStringAsFixed(0)} call-out fee',
-        PricingModel.hourly when draft.hourlyRate != null =>
-          '$symbol ${draft.hourlyRate!.toStringAsFixed(0)} per hour',
-        PricingModel.perItem when draft.minimumCharge != null =>
-          'From $symbol ${draft.minimumCharge!.toStringAsFixed(0)}',
-        _ => null,
-      };
+      if (draft.serviceIds.isEmpty) return null;
+      final keep = 100 - config.feePercent;
+      return 'You keep ${keep.toStringAsFixed(keep % 1 == 0 ? 0 : 1)}% of each job';
     case OnboardingStep.payout:
       return switch (draft.payoutType) {
         PayoutType.mobileMoney when draft.momoNumber.isNotEmpty =>

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,63 +10,54 @@ import 'package:grid_professionals/state/onboarding_state.dart';
 
 /// One screen for the whole post-submission lifecycle: under review,
 /// more information required, verification failed, approved and rejected.
-class ApplicationStatusScreen extends ConsumerWidget {
+class ApplicationStatusScreen extends ConsumerStatefulWidget {
   const ApplicationStatusScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ApplicationStatusScreen> createState() =>
+      _ApplicationStatusScreenState();
+}
+
+class _ApplicationStatusScreenState
+    extends ConsumerState<ApplicationStatusScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // There is no push channel yet, so the decision is picked up whenever this screen opens.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(onboardingControllerProvider.notifier).refreshFromServer();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(onboardingControllerProvider);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Application status'),
-        automaticallyImplyLeading: false,
-      ),
-      body: SafeArea(
-        child: AppPage(
-          children: [
-            ...switch (state.status) {
-              ApplicationStatus.moreInfoRequired => _moreInfo(context, ref),
-              ApplicationStatus.verificationFailed => _failed(context, ref),
-              ApplicationStatus.approved => _approved(context, ref),
-              ApplicationStatus.rejected => _rejected(context, ref),
-              _ => _underReview(context, ref),
-            },
-            const SizedBox(height: 28),
-            const _DemoControls(),
-          ],
-        ),
-      ),
+    return FocusPage(
+      title: 'Application status',
+      children: [
+        ...switch (state.status) {
+          ApplicationStatus.moreInfoRequired => _moreInfo(context, ref),
+          ApplicationStatus.verificationFailed => _failed(context, ref),
+          ApplicationStatus.approved => _approved(context, ref),
+          ApplicationStatus.rejected => _rejected(context, ref),
+          _ => _underReview(context, ref),
+        },
+        if (kDebugMode) ...[const SizedBox(height: 28), const _DemoControls()],
+      ],
     );
   }
 
   List<Widget> _underReview(BuildContext context, WidgetRef ref) => [
-    const AppCard(
-      color: AppColors.forest,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.manage_search, color: Colors.white, size: 32),
-          SizedBox(height: 14),
-          Text(
-            'Your application is under review.',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 21,
-              fontWeight: FontWeight.w800,
-              height: 1.25,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'We\'ll text you as soon as there is an update — usually within '
-            '1–3 working days.',
-            style: TextStyle(color: AppColors.mint, height: 1.45),
-          ),
-        ],
-      ),
+    const _HeroPanel(
+      icon: Icons.hourglass_top_rounded,
+      title: 'Your application is under review.',
+      message:
+          'We\'ll text you as soon as there is an update — usually within '
+          '1–3 working days.',
     ),
     const SectionHeader('What we check'),
     const AppCard(
+      padding: EdgeInsets.all(18),
       child: Column(
         children: [
           TimelineStep(label: 'Application received', complete: true),
@@ -77,7 +69,7 @@ class ApplicationStatusScreen extends ConsumerWidget {
           ),
           TimelineStep(
             label: 'Skills and standards',
-            caption: 'Your services, experience and portfolio',
+            caption: 'Your services, experience and work photos',
             complete: false,
           ),
           TimelineStep(label: 'Decision', complete: false, last: true),
@@ -88,17 +80,17 @@ class ApplicationStatusScreen extends ConsumerWidget {
     const Text(
       'You can still edit your application. If anything needs a second '
       'look, we\'ll list exactly what to fix here.',
-      style: TextStyle(color: AppColors.muted),
+      style: AppText.bodyMuted,
     ),
     const SizedBox(height: 18),
-    OutlinedButton(
+    SecondaryButton(
+      label: 'View my application',
       onPressed: () => context.push('/onboarding/review'),
-      child: const Text('View my application'),
     ),
     const SizedBox(height: 10),
-    OutlinedButton(
+    SecondaryButton(
+      label: 'Contact support',
       onPressed: () => context.push('/support'),
-      child: const Text('Contact support'),
     ),
   ];
 
@@ -132,14 +124,14 @@ class ApplicationStatusScreen extends ConsumerWidget {
         },
       ),
       const SizedBox(height: 18),
-      FilledButton(
+      PrimaryButton(
+        label: 'Review and resubmit',
         onPressed: () => context.push('/onboarding/review'),
-        child: const Text('Review and resubmit'),
       ),
       const SizedBox(height: 10),
-      OutlinedButton(
+      SecondaryButton(
+        label: 'Contact support',
         onPressed: () => context.push('/support'),
-        child: const Text('Contact support'),
       ),
     ];
   }
@@ -159,53 +151,37 @@ class ApplicationStatusScreen extends ConsumerWidget {
       const Text(
         'Find good lighting, remove hats or glasses, and hold the card '
         'steady. You can retry as many times as you need.',
-        style: TextStyle(color: AppColors.muted),
+        style: AppText.bodyMuted,
       ),
       const SizedBox(height: 18),
-      FilledButton(
+      PrimaryButton(
+        label: 'Retry verification',
         onPressed: () {
           controller.resumeForCorrections(OnboardingStep.identity);
           context.push('/onboarding/flow?from=review');
         },
-        child: const Text('Retry verification'),
       ),
       const SizedBox(height: 10),
-      OutlinedButton(
+      SecondaryButton(
+        label: 'Get help from support',
         onPressed: () => context.push('/support'),
-        child: const Text('Get help from support'),
       ),
     ];
   }
 
   List<Widget> _approved(BuildContext context, WidgetRef ref) => [
-    AppCard(
-      color: AppColors.forest,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.verified, color: Colors.white, size: 32),
-          const SizedBox(height: 14),
-          const Text(
-            'You\'re approved.',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Welcome to GRID, '
-            '${ref.watch(onboardingControllerProvider).draft.fullName.split(' ').first}. '
-            'Your profile is live and customers in your areas can now book '
-            'you.',
-            style: const TextStyle(color: AppColors.mint, height: 1.45),
-          ),
-        ],
-      ),
+    _HeroPanel(
+      icon: Icons.verified_rounded,
+      title: 'You\'re approved.',
+      message:
+          'Welcome to GRID, '
+          '${ref.watch(onboardingControllerProvider).draft.fullName.split(' ').first}. '
+          'Your profile is live and customers in your areas can now book '
+          'you.',
     ),
     const SectionHeader('What happens next'),
     const AppCard(
+      padding: EdgeInsets.all(18),
       child: Column(
         children: [
           TimelineStep(label: 'Profile verified and live', complete: true),
@@ -225,12 +201,12 @@ class ApplicationStatusScreen extends ConsumerWidget {
       ),
     ),
     const SizedBox(height: 20),
-    FilledButton(
+    PrimaryButton(
+      label: 'Go to your dashboard',
       onPressed: () async {
         await ref.read(onboardingControllerProvider.notifier).enterApp();
-        if (context.mounted) context.go('/jobs');
+        if (context.mounted) context.go('/home');
       },
-      child: const Text('Go to your dashboard'),
     ),
   ];
 
@@ -247,14 +223,54 @@ class ApplicationStatusScreen extends ConsumerWidget {
     const Text(
       'You can appeal the decision, or apply again after 30 days with '
       'updated documents and portfolio.',
-      style: TextStyle(color: AppColors.muted),
+      style: AppText.bodyMuted,
     ),
     const SizedBox(height: 18),
-    FilledButton(
+    PrimaryButton(
+      label: 'Talk to support',
       onPressed: () => context.push('/support'),
-      child: const Text('Talk to support'),
     ),
   ];
+}
+
+class _HeroPanel extends StatelessWidget {
+  const _HeroPanel({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => NavyPanel(
+    padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: AppColors.navy, size: 24),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          title,
+          style: AppText.title.copyWith(color: Colors.white, fontSize: 22),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          message,
+          style: AppText.body.copyWith(color: Colors.white70, fontSize: 14.5),
+        ),
+      ],
+    ),
+  );
 }
 
 class _FixItem extends StatelessWidget {
@@ -273,15 +289,15 @@ class _FixItem extends StatelessWidget {
     child: AppCard(
       child: Row(
         children: [
-          const Icon(Icons.error_outline, color: AppColors.warningText),
+          const Icon(Icons.error_outline_rounded, color: AppColors.warningText),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: Theme.of(context).textTheme.titleSmall),
+                Text(title, style: AppText.subtitle),
                 const SizedBox(height: 3),
-                Text(detail, style: Theme.of(context).textTheme.bodySmall),
+                Text(detail, style: AppText.caption),
               ],
             ),
           ),
@@ -307,9 +323,10 @@ class _DemoControls extends ConsumerWidget {
         border: Border.all(color: AppColors.line),
         borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
+      clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         shape: const Border(),
-        leading: const Icon(Icons.science_outlined, color: AppColors.muted),
+        leading: const Icon(Icons.tune_rounded, color: AppColors.muted),
         title: const Text(
           'Demo controls',
           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
@@ -344,7 +361,7 @@ class _DemoControls extends ConsumerWidget {
             child: TextButton(
               onPressed: () async {
                 await controller.reset();
-                await ref.read(appControllerProvider.notifier).resetDemo();
+                await ref.read(appControllerProvider.notifier).signOut();
                 if (context.mounted) context.go('/welcome');
               },
               child: const Text('Reset entire demo'),

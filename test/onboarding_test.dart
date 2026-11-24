@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_professionals/app/app.dart';
 import 'package:grid_professionals/core/models/models.dart';
+import 'package:grid_professionals/state/api_providers.dart';
 import 'package:grid_professionals/state/app_state.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -18,12 +19,16 @@ Future<SharedPreferences> preparePreferences([
 Future<void> pumpApp(WidgetTester tester, SharedPreferences preferences) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [preferencesProvider.overrideWithValue(preferences)],
+      overrides: [
+        preferencesProvider.overrideWithValue(preferences),
+        // Widget tests run without a server or platform secure storage.
+        apiEnabledProvider.overrideWithValue(false),
+      ],
       child: const GridProfessionalsApp(),
     ),
   );
   // Let the splash decide the destination.
-  await tester.pump(const Duration(milliseconds: 1200));
+  await tester.pump(const Duration(seconds: 6));
   await tester.pumpAndSettle();
 }
 
@@ -35,13 +40,13 @@ String completeDraftJson({int currentStep = 9}) {
     providerType: ProviderType.individual,
     fullName: 'Ama Owusu',
     delivery: ServiceDelivery.travels,
-    primaryServiceId: 'plumbing',
-    subServices: const ['Leak repairs'],
+    primaryServiceId: 'cleaning',
+    subServices: const ['Deep cleaning'],
     yearsExperience: 6,
-    experienceSummary: 'Residential plumbing and pump installations.',
+    experienceSummary: 'Deep cleans for homes and apartments in Accra.',
     region: 'Greater Accra',
     towns: const ['East Legon', 'Adenta'],
-    calloutFee: 60,
+    hourlyRate: 40,
     payoutType: PayoutType.mobileMoney,
     momoProviderId: 'mtn',
     momoNumber: '24 555 0192',
@@ -99,7 +104,7 @@ void main() {
     expect(find.text('Your details'), findsOneWidget);
 
     // Back returns to the provider-type step with the choice preserved.
-    await tester.tap(find.text('Back'));
+    await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();
     expect(find.text('How you work'), findsOneWidget);
 
@@ -240,12 +245,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Welcome, Ama'), findsOneWidget);
-    expect(find.text('No offers yet'), findsOneWidget);
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -800));
-    await tester.pumpAndSettle();
+    // No demo earnings or demo identity on a brand-new profile.
     expect(find.text('GH₵ 0.00'), findsOneWidget);
-    // No demo earnings on a brand-new profile.
-    expect(find.text('Good morning, Kofi'), findsNothing);
+    expect(find.text('Efua'), findsNothing);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(find.text('No offers yet'), findsOneWidget);
   });
 
   testWidgets('compact screens with large text render without overflow', (

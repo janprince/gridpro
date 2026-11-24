@@ -1,14 +1,34 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grid_professionals/core/models/onboarding_models.dart';
+import 'package:grid_professionals/data/api/api_exception.dart';
+import 'package:grid_professionals/data/api/onboarding_sync.dart';
+import 'package:grid_professionals/data/api/provider_repository.dart';
 import 'package:grid_professionals/data/country/country_config.dart';
 import 'package:grid_professionals/data/country/ghana_config.dart';
+import 'package:grid_professionals/state/api_providers.dart';
 import 'package:grid_professionals/state/app_state.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Active market configuration. Swap this provider to launch other countries.
-final countryConfigProvider = Provider<CountryConfig>((ref) => ghanaConfig);
+/// Active market configuration.
+///
+/// The catalogue (services and coverage areas) comes from GRID so the app and the backend can
+/// never disagree about what exists; the bundled Ghana configuration supplies market rules —
+/// dial code, currency, payout rails — and stands in for the catalogue until it loads or when
+/// the device is offline. Swap the source config to launch another country.
+final countryConfigProvider = Provider<CountryConfig>((ref) {
+  final catalogue = ref.watch(catalogueProvider).value;
+  if (catalogue == null) return ghanaConfig;
+  return ghanaConfig.withCatalogue(
+    services: catalogue.services.isEmpty ? null : catalogue.services,
+    regions: catalogue.regions.isEmpty ? null : catalogue.regions,
+    feePercent: catalogue.feePercent,
+  );
+});
 
 final onboardingControllerProvider =
     NotifierProvider<OnboardingController, OnboardingState>(
@@ -21,6 +41,10 @@ class OnboardingState {
     required this.status,
     this.submitting = false,
     this.submitFailed = false,
+    this.pendingSync = const {},
+    this.syncing = false,
+    this.offline = false,
+    this.serverRequirements = const [],
   });
 
   final OnboardingDraft draft;
@@ -28,34 +52,92 @@ class OnboardingState {
   final bool submitting;
   final bool submitFailed;
 
+  /// Sections saved on this device but not yet accepted by GRID.
+  final Set<OnboardingStep> pendingSync;
+  final bool syncing;
+
+  /// True when the last attempt to reach GRID failed for connectivity reasons.
+  final bool offline;
+
+  /// Requirements the server says are still outstanding, shown on the review screen.
+  final List<({String code, String message})> serverRequirements;
+
   bool get hasDraftInProgress =>
       status == ApplicationStatus.draft &&
       (draft.providerType != null || draft.fullName.isNotEmpty);
+
+  bool get hasUnsyncedWork => pendingSync.isNotEmpty;
 
   OnboardingState copyWith({
     OnboardingDraft? draft,
     ApplicationStatus? status,
     bool? submitting,
     bool? submitFailed,
+    Set<OnboardingStep>? pendingSync,
+    bool? syncing,
+    bool? offline,
+    List<({String code, String message})>? serverRequirements,
   }) => OnboardingState(
     draft: draft ?? this.draft,
     status: status ?? this.status,
     submitting: submitting ?? this.submitting,
     submitFailed: submitFailed ?? this.submitFailed,
+    pendingSync: pendingSync ?? this.pendingSync,
+    syncing: syncing ?? this.syncing,
+    offline: offline ?? this.offline,
+    serverRequirements: serverRequirements ?? this.serverRequirements,
   );
 }
 
 class OnboardingController extends Notifier<OnboardingState> {
   static const _draftKey = 'onboardingDraft';
   static const _statusKey = 'applicationStatus';
+  static const _pendingKey = 'onboardingPendingSync';
+  static const _offeringKey = 'onboardingOfferingId';
+  static const _accountReadyKey = 'onboardingAccountReady';
 
   late SharedPreferences _preferences;
   int _uploadCounter = 0;
+  final _picker = ImagePicker();
 
   @override
   OnboardingState build() {
     _preferences = ref.read(preferencesProvider);
-    return OnboardingState(draft: _restoreDraft(), status: _restoreStatus());
+    return OnboardingState(
+      draft: _restoreDraft(),
+      status: _restoreStatus(),
+      pendingSync: _restorePending(),
+    );
+  }
+
+  OnboardingSyncService get _sync {
+    final service =
+        OnboardingSyncService(
+            ref.read(providerRepositoryProvider),
+            ref.read(catalogueRepositoryProvider),
+          )
+          ..accountReady = _preferences.getBool(_accountReadyKey) ?? false
+          ..offeringId = _preferences.getString(_offeringKey);
+    return service;
+  }
+
+  void _rememberSyncIds(OnboardingSyncService service) {
+    _preferences.setBool(_accountReadyKey, service.accountReady);
+    if (service.offeringId != null) {
+      _preferences.setString(_offeringKey, service.offeringId!);
+    }
+  }
+
+  Set<OnboardingStep> _restorePending() {
+    final names = _preferences.getStringList(_pendingKey) ?? const [];
+    return {
+      for (final step in OnboardingStep.values)
+        if (names.contains(step.name)) step,
+    };
+  }
+
+  void _savePending(Set<OnboardingStep> pending) {
+    _preferences.setStringList(_pendingKey, [for (final s in pending) s.name]);
   }
 
   OnboardingDraft _restoreDraft() {
@@ -114,98 +196,166 @@ class OnboardingController extends Notifier<OnboardingState> {
     orElse: () => OnboardingStep.identity,
   );
 
-  // ---- Mock uploads -------------------------------------------------------
+  // ---- Sync ---------------------------------------------------------------
   //
-  // Uploads are simulated locally. Every third portfolio upload fails on its
-  // first attempt so the failure/retry experience stays demonstrable.
+  // The local draft is the working copy and is already saved by the time these run. Pushing to
+  // GRID is best-effort: a failure queues the section and the provider keeps moving.
 
-  Future<void> addPortfolioUpload() => _addUpload(
-    listOf: (draft) => draft.portfolio,
-    write: (draft, items) => draft.copyWith(portfolio: items),
-    label: 'Work photo',
-    failFirstAttempt: (_uploadCounter + 1) % 3 == 0,
-  );
-
-  Future<void> addQualificationUpload(String label) => _addUpload(
-    listOf: (draft) => draft.qualifications,
-    write: (draft, items) => draft.copyWith(qualifications: items),
-    label: label,
-    failFirstAttempt: false,
-  );
-
-  Future<void> retryUpload(String id) async {
-    UploadItem mark(UploadItem item) => item.id == id
-        ? item.copyWith(state: UploadState.uploading, progress: 0)
-        : item;
-    updateDraft(
-      (draft) => draft.copyWith(
-        portfolio: draft.portfolio.map(mark).toList(),
-        qualifications: draft.qualifications.map(mark).toList(),
-      ),
-    );
-    await _animateUpload(id, failFirstAttempt: false);
-  }
-
-  void removeUpload(String id) => updateDraft(
-    (draft) => draft.copyWith(
-      portfolio: draft.portfolio.where((item) => item.id != id).toList(),
-      qualifications: draft.qualifications
-          .where((item) => item.id != id)
-          .toList(),
-    ),
-  );
-
-  Future<void> _addUpload({
-    required List<UploadItem> Function(OnboardingDraft draft) listOf,
-    required OnboardingDraft Function(
-      OnboardingDraft draft,
-      List<UploadItem> items,
-    )
-    write,
-    required String label,
-    required bool failFirstAttempt,
-  }) async {
-    _uploadCounter++;
-    final item = UploadItem(
-      id: 'upload-$_uploadCounter',
-      label: '$label $_uploadCounter',
-      state: UploadState.uploading,
-    );
-    updateDraft((draft) => write(draft, [...listOf(draft), item]));
-    await _animateUpload(item.id, failFirstAttempt: failFirstAttempt);
-  }
-
-  Future<void> _animateUpload(
-    String id, {
-    required bool failFirstAttempt,
-  }) async {
-    for (var tick = 1; tick <= 4; tick++) {
-      await Future<void>.delayed(const Duration(milliseconds: 260));
-      final failNow = failFirstAttempt && tick == 3;
-      UploadItem advance(UploadItem item) {
-        if (item.id != id || item.state != UploadState.uploading) return item;
-        if (failNow) return item.copyWith(state: UploadState.failed);
-        return item.copyWith(
-          progress: tick / 4,
-          state: tick == 4 ? UploadState.done : UploadState.uploading,
-        );
+  /// Pushes a completed section, plus anything queued from earlier, to GRID.
+  Future<void> syncStep(OnboardingStep step) async {
+    if (!ref.read(apiEnabledProvider)) return;
+    // Offerings and service areas are pushed by server id, so the catalogue must be resolved.
+    try {
+      // A failed warm-up is retried when the provider next saves a step.
+      if (ref.read(catalogueProvider).hasError) {
+        ref.invalidate(catalogueProvider);
       }
+      await ref.read(catalogueProvider.future);
+    } on Object {
+      // Offline: the queue below will hold the section until the catalogue is reachable.
+    }
+    final queue = {...state.pendingSync, step};
+    state = state.copyWith(syncing: true, pendingSync: queue);
+    _savePending(queue);
 
-      updateDraft(
-        (draft) => draft.copyWith(
-          portfolio: draft.portfolio.map(advance).toList(),
-          qualifications: draft.qualifications.map(advance).toList(),
-          idFront: draft.idFront == null ? null : advance(draft.idFront!),
-          idBack: draft.idBack == null ? null : advance(draft.idBack!),
-          selfie: draft.selfie == null ? null : advance(draft.selfie!),
-        ),
-      );
-      if (failNow) return;
+    final service = _sync;
+    final remaining = <OnboardingStep>{};
+    var offline = false;
+
+    // Replay in step order so the account exists before anything that references it.
+    for (final queued in OnboardingStep.values.where(queue.contains)) {
+      try {
+        await service.push(queued, state.draft);
+      } on ApiException catch (error) {
+        remaining.add(queued);
+        offline = offline || error.isOffline;
+        // A connectivity failure will hit every later call too — stop and keep the queue.
+        if (error.isOffline) {
+          remaining.addAll(queue.where((s) => s.index > queued.index));
+          break;
+        }
+      }
+    }
+
+    _rememberSyncIds(service);
+    _savePending(remaining);
+    state = state.copyWith(
+      syncing: false,
+      pendingSync: remaining,
+      offline: offline,
+    );
+  }
+
+  /// Pulls server state after a resume so the app reflects decisions made by Ops.
+  Future<void> refreshFromServer({
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    if (!ref.read(apiEnabledProvider)) return;
+    try {
+      final repository = ref.read(providerRepositoryProvider);
+      final (application, documents) = await (() async {
+        final application = await repository.getApplication();
+        final documents = await repository.getDocuments();
+        return (application, documents);
+      })().timeout(timeout);
+      // Only apply a response that arrived within the deadline. A late result
+      // must not replace local state after the provider starts using the app.
+      if (!ref.mounted) return;
+      _setStatus(_statusFrom(application, documents));
+    } on TimeoutException {
+      // Keep the saved application status when the API is slow/unreachable.
+    } on ApiException {
+      // Keep whatever the app already knows; the status screen stays usable offline.
     }
   }
 
-  /// Simulated identity capture: Ghana Card front/back and selfie.
+  /// Maps GRID's application status onto the app's, deriving the identity-failure state from a
+  /// rejected identity document rather than treating it as a demo-only screen.
+  ApplicationStatus _statusFrom(
+    RemoteApplication application,
+    List<RemoteDocument> documents,
+  ) {
+    final identityRejected = documents.any(
+      (d) =>
+          d.reviewStatus == 'Rejected' &&
+          const {
+            'GhanaCard',
+            'GhanaCardBack',
+            'Selfie',
+            'ProfilePhoto',
+          }.contains(d.documentType),
+    );
+    return switch (application.status) {
+      'Submitted' => ApplicationStatus.submitted,
+      'UnderReview' => ApplicationStatus.underReview,
+      'MoreInformationRequired' =>
+        identityRejected
+            ? ApplicationStatus.verificationFailed
+            : ApplicationStatus.moreInfoRequired,
+      'Approved' => ApplicationStatus.approved,
+      'Rejected' => ApplicationStatus.rejected,
+      _ => ApplicationStatus.draft,
+    };
+  }
+
+  // ---- Uploads ------------------------------------------------------------
+  //
+  // Photos are picked from the device, uploaded to GRID and attached to the application.
+  // The tile shows uploading/done/failed from the real outcome; failures are retryable.
+
+  Future<void> addPortfolioUpload() async {
+    final file = await _pickImage(ImageSource.gallery);
+    if (file == null) return;
+    _uploadCounter++;
+    final item = UploadItem(
+      id: 'portfolio-$_uploadCounter',
+      label: 'Work photo $_uploadCounter',
+      state: UploadState.uploading,
+    );
+    updateDraft(
+      (draft) => draft.copyWith(portfolio: [...draft.portfolio, item]),
+    );
+    await _uploadAndAttach(
+      item,
+      file,
+      purpose: 'portfolio',
+      attach: _attachPortfolio,
+    );
+  }
+
+  Future<void> addQualificationUpload(String label) async {
+    final file = await _pickImage(ImageSource.gallery);
+    if (file == null) return;
+    _uploadCounter++;
+    final item = UploadItem(
+      id: 'certificate-$_uploadCounter',
+      label: '$label $_uploadCounter',
+      state: UploadState.uploading,
+    );
+    updateDraft(
+      (draft) =>
+          draft.copyWith(qualifications: [...draft.qualifications, item]),
+    );
+    await _uploadAndAttach(
+      item,
+      file,
+      purpose: 'certificates',
+      attach: (repo, key, file) => repo.addDocument(
+        documentType: 'ProfessionalCertificate',
+        storageKey: key,
+        fileName: file.name,
+        contentType: _contentTypeOf(file.name),
+        sizeBytes: File(file.path).lengthSync(),
+      ),
+    );
+  }
+
+  /// Ghana Card front/back and a selfie, captured with the camera where available.
   Future<void> captureIdentity(String kind) async {
+    final file = await _pickImage(
+      kind == 'selfie' ? ImageSource.camera : ImageSource.camera,
+    );
+    if (file == null) return;
     _uploadCounter++;
     final item = UploadItem(
       id: 'identity-$kind-$_uploadCounter',
@@ -219,13 +369,165 @@ class OnboardingController extends Notifier<OnboardingState> {
         _ => draft.copyWith(selfie: item),
       },
     );
-    await _animateUpload(item.id, failFirstAttempt: false);
+    final documentType = switch (kind) {
+      'front' => 'GhanaCard',
+      'back' => 'GhanaCardBack',
+      _ => 'Selfie',
+    };
+    await _uploadAndAttach(
+      item,
+      file,
+      purpose: 'identity',
+      attach: (repo, key, file) => repo.addDocument(
+        documentType: documentType,
+        storageKey: key,
+        fileName: file.name,
+        contentType: _contentTypeOf(file.name),
+        sizeBytes: File(file.path).lengthSync(),
+      ),
+    );
+  }
+
+  /// The EPA pest control licence; GRID can't approve pest control without it.
+  Future<void> captureLicence() async {
+    final file = await _pickImage(ImageSource.camera);
+    if (file == null) return;
+    _uploadCounter++;
+    final item = UploadItem(
+      id: 'licence-$_uploadCounter',
+      label: 'EPA licence',
+      state: UploadState.uploading,
+    );
+    updateDraft((draft) => draft.copyWith(licence: item));
+    await _uploadAndAttach(
+      item,
+      file,
+      purpose: 'certificates',
+      attach: (repo, key, file) => repo.addDocument(
+        documentType: 'EpaPestControlLicence',
+        storageKey: key,
+        fileName: file.name,
+        contentType: _contentTypeOf(file.name),
+        sizeBytes: File(file.path).lengthSync(),
+      ),
+    );
+  }
+
+  Future<void> retryUpload(String id) async {
+    // The picked file is not retained across a failure, so a retry asks for the photo again.
+    removeUpload(id);
+    if (id.startsWith('portfolio-')) return addPortfolioUpload();
+    if (id.startsWith('certificate-')) {
+      return addQualificationUpload('Certificate');
+    }
+  }
+
+  void removeUpload(String id) => updateDraft(
+    (draft) => draft.copyWith(
+      portfolio: draft.portfolio.where((item) => item.id != id).toList(),
+      qualifications: draft.qualifications
+          .where((item) => item.id != id)
+          .toList(),
+    ),
+  );
+
+  Future<XFile?> _pickImage(ImageSource source) async {
+    try {
+      return await _picker.pickImage(
+        source: source,
+        imageQuality: 82,
+        maxWidth: 2000,
+      );
+    } on Object {
+      // No camera/gallery on this device (or permission refused) — treat as a cancelled pick.
+      return null;
+    }
+  }
+
+  Future<void> _uploadAndAttach(
+    UploadItem item,
+    XFile file, {
+    required String purpose,
+    required Future<void> Function(
+      ProviderRepository repo,
+      String storageKey,
+      XFile file,
+    )
+    attach,
+  }) async {
+    if (!ref.read(apiEnabledProvider)) {
+      _markUpload(item.id, UploadState.done);
+      return;
+    }
+    try {
+      final repository = ref.read(providerRepositoryProvider);
+      await _sync.push(OnboardingStep.details, state.draft);
+      final bytes = await file.readAsBytes();
+      final storageKey = await repository.uploadFile(
+        purpose: purpose,
+        fileName: file.name,
+        contentType: _contentTypeOf(file.name),
+        bytes: bytes,
+      );
+      await attach(repository, storageKey, file);
+      _markUpload(item.id, UploadState.done);
+    } on ApiException {
+      _markUpload(item.id, UploadState.failed);
+    }
+  }
+
+  Future<void> _attachPortfolio(
+    ProviderRepository repo,
+    String key,
+    XFile file,
+  ) => repo.addPortfolioItem(
+    title: 'Completed work',
+    storageKey: key,
+    contentType: _contentTypeOf(file.name),
+  );
+
+  void _markUpload(String id, UploadState result) {
+    UploadItem advance(UploadItem item) =>
+        item.id == id ? item.copyWith(state: result, progress: 1) : item;
+    updateDraft(
+      (draft) => draft.copyWith(
+        portfolio: draft.portfolio.map(advance).toList(),
+        qualifications: draft.qualifications.map(advance).toList(),
+        idFront: draft.idFront == null ? null : advance(draft.idFront!),
+        idBack: draft.idBack == null ? null : advance(draft.idBack!),
+        selfie: draft.selfie == null ? null : advance(draft.selfie!),
+        licence: draft.licence == null ? null : advance(draft.licence!),
+      ),
+    );
+  }
+
+  static String _contentTypeOf(String fileName) {
+    final name = fileName.toLowerCase();
+    if (name.endsWith('.png')) return 'image/png';
+    if (name.endsWith('.webp')) return 'image/webp';
+    if (name.endsWith('.heic')) return 'image/heic';
+    if (name.endsWith('.pdf')) return 'application/pdf';
+    return 'image/jpeg';
   }
 
   // ---- Submission ---------------------------------------------------------
 
-  /// Submits (or resubmits) the application. Guards against repeated taps;
-  /// the simulated network call moves the status to under review.
+  /// Checks the server's own view of completeness, so the review screen reflects what
+  /// submission will actually accept rather than only local validation.
+  Future<void> refreshReadiness() async {
+    if (!ref.read(apiEnabledProvider)) return;
+    try {
+      final readiness = await _sync.readiness();
+      state = state.copyWith(
+        serverRequirements: readiness.missing,
+        offline: false,
+      );
+    } on ApiException catch (error) {
+      state = state.copyWith(offline: error.isOffline);
+    }
+  }
+
+  /// Submits (or resubmits) the application. Guards against repeated taps.
   Future<void> submit() async {
     const submittable = {
       ApplicationStatus.draft,
@@ -234,10 +536,43 @@ class OnboardingController extends Notifier<OnboardingState> {
     };
     if (state.submitting || !submittable.contains(state.status)) return;
     state = state.copyWith(submitting: true, submitFailed: false);
-    await Future<void>.delayed(const Duration(milliseconds: 1400));
-    _setStatus(ApplicationStatus.underReview);
-    state = state.copyWith(submitting: false);
-    ref.read(appControllerProvider.notifier).submitApplication();
+
+    if (!ref.read(apiEnabledProvider)) {
+      await Future<void>.delayed(const Duration(milliseconds: 1400));
+      _setStatus(ApplicationStatus.underReview);
+      state = state.copyWith(submitting: false);
+      return;
+    }
+
+    try {
+      // Flush anything still queued, accept the standards, then submit.
+      final service = _sync;
+      for (final step in OnboardingStep.values.where(
+        state.pendingSync.contains,
+      )) {
+        await service.push(step, state.draft);
+      }
+      _rememberSyncIds(service);
+      _savePending(const {});
+
+      if (state.draft.agreedToStandards) await service.acceptStandards();
+      await service.submit();
+
+      _setStatus(ApplicationStatus.submitted);
+      state = state.copyWith(
+        submitting: false,
+        pendingSync: const {},
+        offline: false,
+        submitFailed: false,
+      );
+    } on ApiException catch (error) {
+      state = state.copyWith(
+        submitting: false,
+        submitFailed: true,
+        offline: error.isOffline,
+        serverRequirements: [(code: error.code, message: error.message)],
+      );
+    }
   }
 
   /// Demo-only: preview any application status without a backend.
@@ -263,6 +598,11 @@ class OnboardingController extends Notifier<OnboardingState> {
   Future<void> reset() async {
     await _preferences.remove(_draftKey);
     await _preferences.remove(_statusKey);
+    await _preferences.remove(_pendingKey);
+    await _preferences.remove(_offeringKey);
+    await _preferences.remove(_accountReadyKey);
+    // Signing out clears the tokens too, so a restart starts from a clean session.
+    await ref.read(authRepositoryProvider).logout();
     state = const OnboardingState(
       draft: OnboardingDraft(),
       status: ApplicationStatus.draft,

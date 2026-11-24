@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:grid_professionals/core/models/models.dart';
+import 'package:grid_professionals/core/theme/app_theme.dart';
 import 'package:grid_professionals/core/widgets/app_widgets.dart';
 import 'package:grid_professionals/features/onboarding/steps_about_you.dart';
 import 'package:grid_professionals/features/onboarding/steps_getting_paid.dart';
@@ -43,6 +46,10 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
       return;
     }
     setState(() => _showErrors = false);
+    // Save to GRID in the background; the local draft is already stored, so the provider is
+    // never blocked on the network.
+    unawaited(controller.syncStep(_step));
+
     if (widget.returnToReview) {
       context.go('/onboarding/review');
     } else if (_step == OnboardingStep.values.last) {
@@ -69,7 +76,7 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
     OnboardingStep.details =>
       'Fill in the highlighted details above to continue.',
     OnboardingStep.services =>
-      'Pick your main service and at least one thing you do within it.',
+      'Pick your main service and at least one thing you offer.',
     OnboardingStep.experience =>
       'Add your years of experience and a short description of your work.',
     OnboardingStep.serviceArea =>
@@ -94,57 +101,79 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
         if (!didPop) _back();
       },
       child: Scaffold(
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            tooltip: 'Back',
-            onPressed: _back,
-          ),
-          title: Text(
-            widget.returnToReview ? 'Edit section' : 'Set up profile',
-          ),
-          actions: [
-            if (!widget.returnToReview)
-              TextButton(
-                onPressed: () => context.go('/onboarding'),
-                child: const Text('Save & exit'),
-              ),
-          ],
-        ),
+        backgroundColor: AppColors.surface,
         body: SafeArea(
           child: Column(
             children: [
-              if (!widget.returnToReview)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                  child: OnboardingProgress(step: step),
-                ),
-              Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
-                  layoutBuilder: (currentChild, previousChildren) => Stack(
-                    alignment: Alignment.topCenter,
-                    children: [...previousChildren, ?currentChild],
-                  ),
-                  child: SingleChildScrollView(
-                    key: ValueKey(step),
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          step.title,
-                          style: Theme.of(context).textTheme.headlineMedium,
-                        ),
-                        const SizedBox(height: 20),
-                        _StepBody(step: step, showErrors: _showErrors),
-                        if (_showErrors) ...[
-                          const SizedBox(height: 16),
-                          InlineError(message: _errorMessage(step)),
-                        ],
-                      ],
+              // Back, progress and the escape hatch share one quiet row, so
+              // the step title is the first thing read.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 0),
+                child: Row(
+                  children: [
+                    NavChip(onPressed: _back),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      flex: 3,
+                      child: widget.returnToReview
+                          ? const SizedBox.shrink()
+                          : OnboardingProgress(step: step),
                     ),
-                  ),
+                    const SizedBox(width: 6),
+                    if (!widget.returnToReview)
+                      // Shrinks rather than overflows at the largest text
+                      // sizes, where the label alone can outrun the row.
+                      Flexible(
+                        flex: 2,
+                        child: TextButton(
+                          onPressed: () => context.go('/onboarding'),
+                          child: const Text(
+                            'Save & exit',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      layoutBuilder: (currentChild, previousChildren) => Stack(
+                        alignment: Alignment.topCenter,
+                        children: [...previousChildren, ?currentChild],
+                      ),
+                      child: SingleChildScrollView(
+                        key: ValueKey(step),
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.gutter,
+                          24,
+                          AppSpacing.gutter,
+                          32,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!widget.returnToReview) ...[
+                              OnboardingStepEyebrow(step: step),
+                              const SizedBox(height: 10),
+                            ],
+                            Text(step.title, style: AppText.headline),
+                            const SizedBox(height: 20),
+                            _StepBody(step: step, showErrors: _showErrors),
+                            if (_showErrors) ...[
+                              const SizedBox(height: 16),
+                              InlineError(message: _errorMessage(step)),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    const ScrollFade(),
+                  ],
                 ),
               ),
             ],
@@ -157,11 +186,6 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
               ? 'Review application'
               : 'Continue',
           onPressed: _continue,
-          secondaryLabel:
-              widget.returnToReview || step != OnboardingStep.values.first
-              ? 'Back'
-              : null,
-          onSecondary: _back,
         ),
       ),
     );
