@@ -13,74 +13,77 @@ class ServicesStep extends ConsumerWidget {
     final draft = ref.watch(onboardingControllerProvider).draft;
     final controller = ref.read(onboardingControllerProvider.notifier);
     final config = ref.watch(countryConfigProvider);
-    final service = config.serviceById(draft.primaryServiceId);
+    final chosen = [for (final id in draft.serviceIds) ?config.serviceById(id)];
+
+    void toggle(ServiceDefinition item) => controller.updateDraft((draft) {
+      final ids = [...draft.serviceIds];
+      if (ids.contains(item.id)) {
+        ids.remove(item.id);
+      } else {
+        ids.add(item.id);
+      }
+      // Skills belong to the services still chosen.
+      final skills = {
+        for (final id in ids) ...?config.serviceById(id)?.subServices,
+      };
+      return draft.copyWith(
+        primaryServiceId: ids.isEmpty ? null : ids.first,
+        extraServiceIds: ids.skip(1).toList(),
+        subServices: draft.subServices.where(skills.contains).toList(),
+      );
+    });
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text(
-          'Choose your main service. You can add more services after your '
-          'profile is approved.',
-          style: TextStyle(color: AppColors.muted),
+          'Choose every service you do well. GRID sets the price customers '
+          'pay; you see what each job earns you on the next steps.',
+          style: AppText.bodyMuted,
         ),
         const SizedBox(height: 20),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 130,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 0.82,
-          ),
-          itemCount: config.services.length,
-          itemBuilder: (context, index) {
-            final item = config.services[index];
-            return ServiceCard(
-              service: item,
-              selected: item.id == draft.primaryServiceId,
-              onTap: () => controller.updateDraft(
-                (draft) => draft.copyWith(
-                  primaryServiceId: item.id,
-                  // Sub-services belong to the selected service.
-                  subServices: item.id == draft.primaryServiceId
-                      ? draft.subServices
-                      : const [],
-                ),
-              ),
-            );
-          },
-        ),
-        if (service != null) ...[
-          const SizedBox(height: 24),
-          Text(
-            'What do you do within ${service.name.toLowerCase()}?',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Select everything you handle confidently.',
-            style: Theme.of(context).textTheme.bodySmall,
+        for (final item in config.services) ...[
+          ServiceOptionCard(
+            service: item,
+            selected: draft.serviceIds.contains(item.id),
+            onTap: () => toggle(item),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final sub in service.subServices)
-                FilterChip(
-                  label: Text(sub),
-                  selected: draft.subServices.contains(sub),
-                  onSelected: (value) => controller.updateDraft(
-                    (draft) => draft.copyWith(
-                      subServices: value
-                          ? [...draft.subServices, sub]
-                          : draft.subServices
-                                .where((item) => item != sub)
-                                .toList(),
-                    ),
-                  ),
-                ),
-            ],
+        ],
+        if (draft.needsLicence) ...[
+          const SizedBox(height: 4),
+          const StatusBanner(
+            kind: StatusKind.neutral,
+            title: 'Pest control needs an EPA licence',
+            message:
+                'You\'ll add a photo of it with your ID. GRID can\'t approve '
+                'pest control without one.',
+          ),
+          const SizedBox(height: 12),
+        ],
+        for (final service in chosen) ...[
+          const SizedBox(height: 16),
+          Text(
+            chosen.length == 1 ? 'What do you offer?' : service.name,
+            style: AppText.heading,
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Select everything you do confidently.',
+            style: AppText.caption,
+          ),
+          const SizedBox(height: 14),
+          CheckList(
+            options: service.subServices,
+            selected: draft.subServices
+                .where(service.subServices.contains)
+                .toList(),
+            onChanged: (value) => controller.updateDraft((draft) {
+              final others = draft.subServices
+                  .where((s) => !service.subServices.contains(s))
+                  .toList();
+              return draft.copyWith(subServices: [...others, ...value]);
+            }),
           ),
         ],
       ],
@@ -210,7 +213,7 @@ class ServiceAreaStep extends ConsumerWidget {
           draft.travelsToCustomers
               ? 'Job offers are matched to the areas you cover.'
               : 'Customers nearby will find your premises through these areas.',
-          style: const TextStyle(color: AppColors.muted),
+          style: AppText.bodyMuted,
         ),
         const SizedBox(height: 20),
         SelectionRow(
@@ -237,9 +240,10 @@ class ServiceAreaStep extends ConsumerWidget {
         ),
         if (region != null) ...[
           const SizedBox(height: 20),
-          Text(
-            draft.travelsToCustomers ? 'Areas you cover' : 'Your neighbourhood',
-            style: Theme.of(context).textTheme.titleSmall,
+          FieldLabel(
+            label: draft.travelsToCustomers
+                ? 'Areas you cover'
+                : 'Your neighbourhood',
           ),
           const SizedBox(height: 4),
           Text(
@@ -312,7 +316,7 @@ class AvailabilityStep extends ConsumerWidget {
         const Text(
           'You can change this any time — it only sets what you are offered '
           'by default.',
-          style: TextStyle(color: AppColors.muted),
+          style: AppText.bodyMuted,
         ),
         const SizedBox(height: 20),
         ScheduleEditor(
@@ -327,34 +331,12 @@ class AvailabilityStep extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 20),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
+        SwitchRow(
+          title: 'Same-day requests',
+          subtitle: 'Jobs booked for today, at short notice.',
           value: draft.sameDay,
-          title: const Text(
-            'Same-day jobs',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
-          ),
-          subtitle: const Text(
-            'Receive jobs that need attention today.',
-            style: TextStyle(fontSize: 12.5),
-          ),
           onChanged: (value) =>
               controller.updateDraft((draft) => draft.copyWith(sameDay: value)),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          value: draft.emergency,
-          title: const Text(
-            'Emergency call-outs',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
-          ),
-          subtitle: const Text(
-            'Urgent jobs outside your normal hours, at your own rates.',
-            style: TextStyle(fontSize: 12.5),
-          ),
-          onChanged: (value) => controller.updateDraft(
-            (draft) => draft.copyWith(emergency: value),
-          ),
         ),
       ],
     );

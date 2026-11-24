@@ -8,3 +8,4 @@ export 'package:grid_professionals/core/widgets/feedback.dart';
 export 'package:grid_professionals/core/widgets/forms.dart';
 export 'package:grid_professionals/core/widgets/layout.dart';
 export 'package:grid_professionals/core/widgets/onboarding_widgets.dart';
+export 'package:grid_professionals/core/widgets/patterns.dart';

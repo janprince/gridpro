@@ -15,21 +15,11 @@ class ProviderTypeStep extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'This shapes the questions we ask next. You can offer the same '
-          'services either way.',
-          style: TextStyle(color: AppColors.muted),
-        ),
-        const SizedBox(height: 20),
         ChoiceCard(
           title: 'I work on my own',
-          subtitle: 'An independent professional, like a plumber or cleaner.',
+          subtitle: 'An independent cleaner or laundry professional.',
           selected: draft.providerType == ProviderType.individual,
-          leading: const Icon(
-            Icons.person_outline,
-            color: AppColors.forest,
-            size: 28,
-          ),
+          leading: const ChoiceIcon(Icons.person_outline),
           onTap: () => controller.updateDraft(
             (draft) => draft.copyWith(providerType: ProviderType.individual),
           ),
@@ -37,13 +27,9 @@ class ProviderTypeStep extends ConsumerWidget {
         const SizedBox(height: 12),
         ChoiceCard(
           title: 'I run a small business',
-          subtitle: 'A registered or informal business, like a laundry shop.',
+          subtitle: 'A laundry shop or cleaning team, registered or not.',
           selected: draft.providerType == ProviderType.business,
-          leading: const Icon(
-            Icons.storefront_outlined,
-            color: AppColors.forest,
-            size: 28,
-          ),
+          leading: const ChoiceIcon(Icons.storefront_outlined),
           onTap: () => controller.updateDraft(
             (draft) => draft.copyWith(providerType: ProviderType.business),
           ),
@@ -98,7 +84,7 @@ class _DetailsStepState extends ConsumerState<DetailsStep> {
           FormTextField(
             label: 'Business name',
             controller: _business,
-            hint: 'e.g. Mensah Electrical Works',
+            hint: 'e.g. Fresh Start Cleaning',
             textCapitalization: TextCapitalization.words,
             errorText: widget.showErrors && draft.businessName.trim().isEmpty
                 ? 'Enter your business name.'
@@ -132,15 +118,12 @@ class _DetailsStepState extends ConsumerState<DetailsStep> {
           onChanged: (value) =>
               controller.updateDraft((draft) => draft.copyWith(email: value)),
         ),
-        const SizedBox(height: 24),
-        Text(
-          'How do you serve customers?',
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 28),
+        const Text('How do you serve customers?', style: AppText.heading),
+        const SizedBox(height: 12),
         ChoiceCard(
-          title: 'I travel to customers',
-          subtitle: 'You work at the customer\'s home or premises.',
+          title: 'I go to customers',
+          subtitle: 'You clean at their home, or collect and deliver laundry.',
           selected: draft.delivery == ServiceDelivery.travels,
           onTap: () => controller.updateDraft(
             (draft) => draft.copyWith(delivery: ServiceDelivery.travels),
@@ -149,7 +132,7 @@ class _DetailsStepState extends ConsumerState<DetailsStep> {
         const SizedBox(height: 10),
         ChoiceCard(
           title: 'Customers come to me',
-          subtitle: 'You work from a fixed place, like a laundry or workshop.',
+          subtitle: 'Customers drop off and collect at your laundry.',
           selected: draft.delivery == ServiceDelivery.fixedPremises,
           onTap: () => controller.updateDraft(
             (draft) => draft.copyWith(delivery: ServiceDelivery.fixedPremises),
@@ -158,7 +141,7 @@ class _DetailsStepState extends ConsumerState<DetailsStep> {
         const SizedBox(height: 10),
         ChoiceCard(
           title: 'Both',
-          subtitle: 'You have premises and also travel out for jobs.',
+          subtitle: 'You have a shop and also pick up and deliver.',
           selected: draft.delivery == ServiceDelivery.both,
           onTap: () => controller.updateDraft(
             (draft) => draft.copyWith(delivery: ServiceDelivery.both),

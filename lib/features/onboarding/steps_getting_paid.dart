@@ -1,146 +1,163 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grid_professionals/core/theme/app_theme.dart';
+import 'package:grid_professionals/core/utils/formatters.dart';
 import 'package:grid_professionals/core/widgets/app_widgets.dart';
 import 'package:grid_professionals/data/country/country_config.dart';
 import 'package:grid_professionals/state/onboarding_state.dart';
 
-class PricingStep extends ConsumerStatefulWidget {
+/// "What you earn": GRID's price for each package and the provider's share,
+/// for every service they picked. Read-only; GRID sets one price per job.
+class PricingStep extends ConsumerWidget {
   const PricingStep({super.key, required this.showErrors});
   final bool showErrors;
 
   @override
-  ConsumerState<PricingStep> createState() => _PricingStepState();
-}
-
-class _PricingStepState extends ConsumerState<PricingStep> {
-  late final TextEditingController _amount;
-  late final TextEditingController _minimum;
-  late final TextEditingController _notes;
-
-  @override
-  void initState() {
-    super.initState();
-    final draft = ref.read(onboardingControllerProvider).draft;
-    final config = ref.read(countryConfigProvider);
-    final model = config.serviceById(draft.primaryServiceId)?.pricingModel;
-    final amount = switch (model) {
-      PricingModel.hourly => draft.hourlyRate,
-      PricingModel.perItem => draft.minimumCharge,
-      _ => draft.calloutFee,
-    };
-    _amount = TextEditingController(
-      text: amount == null ? '' : _trimmed(amount),
-    );
-    _minimum = TextEditingController(
-      text: draft.minimumCharge == null || model == PricingModel.perItem
-          ? ''
-          : _trimmed(draft.minimumCharge!),
-    );
-    _notes = TextEditingController(text: draft.pricingNotes);
-  }
-
-  static String _trimmed(double value) => value == value.roundToDouble()
-      ? value.toStringAsFixed(0)
-      : value.toStringAsFixed(2);
-
-  @override
-  void dispose() {
-    _amount.dispose();
-    _minimum.dispose();
-    _notes.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final draft = ref.watch(onboardingControllerProvider).draft;
-    final controller = ref.read(onboardingControllerProvider.notifier);
     final config = ref.watch(countryConfigProvider);
-    final service = config.serviceById(draft.primaryServiceId);
-    final model = service?.pricingModel ?? PricingModel.calloutQuote;
-
-    final (label, helper, explainer) = switch (model) {
-      PricingModel.calloutQuote => (
-        'Call-out fee',
-        'Covers your travel and inspection. You quote the full job after '
-            'inspecting it.',
-        'For ${service?.name.toLowerCase() ?? 'your trade'}, customers pay a '
-            'call-out fee for you to come and inspect, then approve your '
-            'quote before work starts.',
-      ),
-      PricingModel.hourly => (
-        'Hourly rate',
-        'What you charge per hour of work.',
-        'Customers see your hourly rate before they book you.',
-      ),
-      PricingModel.perItem => (
-        'Starting price',
-        'Your lowest price, e.g. wash & fold per basket.',
-        'Customers see your starting price. You confirm the full price when '
-            'you receive the items.',
-      ),
-    };
+    final fee = config.feePercent;
+    final keep = 100 - fee;
+    final services = [
+      for (final id in draft.serviceIds) ?config.serviceById(id),
+    ];
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(explainer, style: const TextStyle(color: AppColors.muted)),
-        const SizedBox(height: 20),
-        MoneyField(
-          label: label,
-          controller: _amount,
-          helper: helper,
-          onChanged: (value) {
-            final parsed = _parsed(value);
-            controller.updateDraft(
-              (draft) => switch (model) {
-                PricingModel.hourly => draft.copyWith(hourlyRate: parsed),
-                PricingModel.perItem => draft.copyWith(minimumCharge: parsed),
-                PricingModel.calloutQuote => draft.copyWith(calloutFee: parsed),
-              },
-            );
-          },
+        Text(
+          'GRID sets one price for every job, so customers book without '
+          'haggling and you never have to quote. You keep ${_pct(keep)} of '
+          'it. GRID\'s ${_pct(fee)} pays for finding you customers, taking '
+          'payment and support.',
+          style: AppText.bodyMuted,
         ),
-        if (widget.showErrors && _parsed(_amount.text) == null) ...[
-          const SizedBox(height: 8),
-          InlineError(
-            message: 'Enter your ${label.toLowerCase()} to continue.',
-          ),
-        ],
-        if (model == PricingModel.hourly) ...[
+        const SizedBox(height: 20),
+        for (final service in services) ...[
+          _EarningsCard(service: service, feePercent: fee),
           const SizedBox(height: 16),
-          MoneyField(
-            label: 'Minimum charge',
-            controller: _minimum,
-            optional: true,
-            helper: 'The least a booking pays, even for short jobs.',
-            onChanged: (value) => controller.updateDraft(
-              (draft) => draft.copyWith(minimumCharge: _parsed(value)),
-            ),
-          ),
         ],
-        const SizedBox(height: 16),
-        FormTextField(
-          label: 'Pricing notes',
-          controller: _notes,
-          optional: true,
-          maxLines: 3,
-          hint: model == PricingModel.perItem
-              ? 'e.g. Wash & fold GH₵ 60 per basket, duvets GH₵ 80'
-              : 'e.g. Weekend rates, material costs charged separately',
-          textCapitalization: TextCapitalization.sentences,
-          onChanged: (value) => controller.updateDraft(
-            (draft) => draft.copyWith(pricingNotes: value),
-          ),
+        const StatusBanner(
+          kind: StatusKind.neutral,
+          title: 'Paid after every job',
+          message:
+              'Your earnings go to your payout account once the customer '
+              'confirms the job is done.',
         ),
       ],
     );
   }
 
-  double? _parsed(String value) {
-    final parsed = double.tryParse(value.trim());
-    return parsed == null || parsed <= 0 ? null : parsed;
+  static String _pct(double value) => value == value.roundToDouble()
+      ? '${value.toStringAsFixed(0)}%'
+      : '${value.toStringAsFixed(1)}%';
+}
+
+class _EarningsCard extends StatelessWidget {
+  const _EarningsCard({required this.service, required this.feePercent});
+  final ServiceDefinition service;
+  final double feePercent;
+
+  @override
+  Widget build(BuildContext context) {
+    final kind =
+        ServiceKindInfo.fromName(service.id) ??
+        ServiceKindInfo.fromName(service.name) ??
+        ServiceKind.cleaning;
+    final groups = <String, List<PackageRate>>{};
+    for (final rate in service.rates) {
+      groups.putIfAbsent(rate.group, () => []).add(rate);
+    }
+
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              ServiceBadge(service: kind, size: 40),
+              const SizedBox(width: 12),
+              Expanded(child: Text(service.name, style: AppText.heading)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (service.rates.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: Text(
+                'Prices show here once you\'re online.',
+                style: AppText.caption,
+              ),
+            )
+          else ...[
+            const Padding(
+              padding: EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(child: Text('JOB', style: AppText.overline)),
+                  Text('YOU EARN', style: AppText.overline),
+                ],
+              ),
+            ),
+            for (final entry in groups.entries) ...[
+              if (groups.length > 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 2),
+                  child: Text(entry.key, style: AppText.label),
+                ),
+              for (final rate in entry.value)
+                _RateRow(rate: rate, feePercent: feePercent),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RateRow extends StatelessWidget {
+  const _RateRow({required this.rate, required this.feePercent});
+  final PackageRate rate;
+  final double feePercent;
+
+  @override
+  Widget build(BuildContext context) {
+    final per = rate.unitLabel == null ? '' : ' per ${rate.unitLabel}';
+    return Semantics(
+      label:
+          '${rate.name}: customer pays ${formatCurrency(rate.price)}$per, '
+          'you earn ${formatCurrency(rate.earning(feePercent))}',
+      excludeSemantics: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: AppColors.line)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(rate.name, style: AppText.body),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Customer pays ${formatCurrency(rate.price)}$per',
+                    style: AppText.caption,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              formatCurrency(rate.earning(feePercent)),
+              style: AppText.subtitle,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -189,19 +206,15 @@ class _PayoutStepState extends ConsumerState<PayoutStep> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'This is where GRID sends your earnings after each job.',
-          style: TextStyle(color: AppColors.muted),
+          'This is where GRID sends your earnings every Friday.',
+          style: AppText.bodyMuted,
         ),
         const SizedBox(height: 20),
         ChoiceCard(
           title: 'Mobile Money',
           subtitle: 'Paid to your MoMo wallet. Most providers choose this.',
           selected: draft.payoutType == PayoutType.mobileMoney,
-          leading: const Icon(
-            Icons.phone_android,
-            color: AppColors.forest,
-            size: 26,
-          ),
+          leading: const ChoiceIcon(Icons.phone_android),
           onTap: () => controller.updateDraft(
             (draft) => draft.copyWith(payoutType: PayoutType.mobileMoney),
           ),
@@ -211,11 +224,7 @@ class _PayoutStepState extends ConsumerState<PayoutStep> {
           title: 'Bank account',
           subtitle: 'Paid to a Ghanaian bank account.',
           selected: draft.payoutType == PayoutType.bank,
-          leading: const Icon(
-            Icons.account_balance_outlined,
-            color: AppColors.forest,
-            size: 26,
-          ),
+          leading: const ChoiceIcon(Icons.account_balance_outlined),
           onTap: () => controller.updateDraft(
             (draft) => draft.copyWith(payoutType: PayoutType.bank),
           ),

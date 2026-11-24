@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>GRID Pro uses the camera to photograph your ID, selfie, certificates and finished work.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>GRID Pro lets you choose photos of your certificates and finished work.</string>
 </dict>
 </plist>

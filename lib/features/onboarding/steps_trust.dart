@@ -16,12 +16,12 @@ class PortfolioStep extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Photos of finished work help customers choose you. Add at least '
-          'one — clear before-and-after shots work best.',
-          style: TextStyle(color: AppColors.muted),
+          'Photos of your work help customers choose you. Add at least one — '
+          'a spotless kitchen, a neat stack of ironed shirts.',
+          style: AppText.bodyMuted,
         ),
-        const SizedBox(height: 20),
-        Text('Work photos', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 22),
+        const FieldLabel(label: 'Work photos'),
         const SizedBox(height: 10),
         GridView.count(
           crossAxisCount: 3,
@@ -43,15 +43,12 @@ class PortfolioStep extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 24),
-        Text(
-          'Licences and certificates',
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
+        const FieldLabel(label: 'Certificates', optional: true),
         const SizedBox(height: 4),
-        Text(
-          'Optional, but they strengthen your application — for example an '
-          'Energy Commission licence for electricians.',
-          style: Theme.of(context).textTheme.bodySmall,
+        const Text(
+          'A business registration or training certificate strengthens your '
+          'application.',
+          style: AppText.caption,
         ),
         const SizedBox(height: 10),
         GridView.count(
@@ -74,12 +71,6 @@ class PortfolioStep extends ConsumerWidget {
               ),
           ],
         ),
-        const SizedBox(height: 16),
-        Text(
-          'Uploads are simulated in this demo build — no files leave your '
-          'device.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
       ],
     );
   }
@@ -100,7 +91,7 @@ class IdentityStep extends ConsumerWidget {
           'Verification keeps the network safe for customers and '
           'professionals. You\'ll need your ${config.idDocumentName} and '
           'good lighting.',
-          style: const TextStyle(color: AppColors.muted),
+          style: AppText.bodyMuted,
         ),
         const SizedBox(height: 16),
         const StatusBanner(
@@ -129,11 +120,13 @@ class IdentityStep extends ConsumerWidget {
           item: draft.selfie,
           onCapture: () => controller.captureIdentity('selfie'),
         ),
-        const SizedBox(height: 8),
-        Text(
-          'Captures are simulated in this demo build.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
+        if (draft.needsLicence)
+          _CaptureRow(
+            title: 'EPA pest control licence',
+            subtitle: 'Required by law to offer pest control.',
+            item: draft.licence,
+            onCapture: controller.captureLicence,
+          ),
       ],
     );
   }
@@ -164,9 +157,9 @@ class _CaptureRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: Theme.of(context).textTheme.titleSmall),
+                  Text(title, style: AppText.subtitle),
                   const SizedBox(height: 3),
-                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+                  Text(subtitle, style: AppText.caption),
                 ],
               ),
             ),
@@ -175,33 +168,38 @@ class _CaptureRow extends StatelessWidget {
               null => OutlinedButton(
                 onPressed: onCapture,
                 style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(0, 44),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  minimumSize: const Size(0, 42),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  textStyle: AppText.button.copyWith(fontSize: 13),
                 ),
-                child: const Text('Capture'),
+                child: const Text('Take photo'),
               ),
               UploadState.uploading => const SizedBox(
                 width: 24,
                 height: 24,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.6,
-                  semanticsLabel: 'Uploading capture',
+                  semanticsLabel: 'Uploading photo',
                 ),
               ),
               UploadState.failed => OutlinedButton(
                 onPressed: onCapture,
                 style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(0, 44),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  minimumSize: const Size(0, 42),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
                   side: const BorderSide(color: AppColors.danger),
                   foregroundColor: AppColors.danger,
+                  textStyle: AppText.button.copyWith(fontSize: 13),
                 ),
-                child: const Text('Retry'),
+                child: const Text('Try again'),
               ),
               UploadState.done => Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.check_circle, color: AppColors.success),
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: AppColors.success,
+                  ),
                   const SizedBox(width: 4),
                   TextButton(onPressed: onCapture, child: const Text('Retake')),
                 ],
